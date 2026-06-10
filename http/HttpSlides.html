@@ -1,0 +1,3084 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HTTP Accelerator — Complete HTTP Deep Dive</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/theme/black.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5/plugin/highlight/monokai.css" />
+
+  <style>
+    /* ═══════════════════════════════════════════════════════════════════
+       DESIGN SYSTEM
+       ═══════════════════════════════════════════════════════════════════ */
+    :root {
+      --bg-deep:    #060d17;
+      --bg-mid:     #0b1a2e;
+      --bg-surface: #0f2440;
+      --text:       #e8f1fa;
+      --text-dim:   #8fa8c4;
+      --accent:     #f59e0b;
+      --accent-glow: rgba(245, 158, 11, 0.25);
+      --teal:       #06b6d4;
+      --teal-glow:  rgba(6, 182, 212, 0.2);
+      --green:      #22c55e;
+      --green-glow: rgba(34, 197, 94, 0.15);
+      --rose:       #f43f5e;
+      --rose-glow:  rgba(244, 63, 94, 0.18);
+      --purple:     #a78bfa;
+      --purple-glow:rgba(167, 139, 250, 0.15);
+      --panel-bg:   rgba(8, 18, 32, 0.82);
+      --panel-border: rgba(140, 180, 220, 0.15);
+      --glass:      rgba(255,255,255,0.04);
+      --radius:     14px;
+      --mono:       "JetBrains Mono", "Fira Code", monospace;
+      --sans:       "Inter", -apple-system, system-ui, sans-serif;
+    }
+
+    /* ── Global ── */
+    .reveal {
+      font-family: var(--sans);
+      color: var(--text);
+      font-size: 18px;
+      background:
+        radial-gradient(ellipse 1400px 800px at 5% 0%, rgba(245,158,11,0.08), transparent 50%),
+        radial-gradient(ellipse 1000px 600px at 95% 5%, rgba(6,182,212,0.09), transparent 45%),
+        radial-gradient(ellipse 800px 800px at 50% 100%, rgba(167,139,250,0.06), transparent 50%),
+        linear-gradient(160deg, var(--bg-deep), var(--bg-mid) 40%, var(--bg-surface));
+    }
+
+    .reveal *, .reveal *::before, .reveal *::after {
+      box-sizing: border-box;
+    }
+
+    .reveal .slides { text-align: left; }
+    .reveal .slides > section { padding: 24px 36px; max-width: 100%; overflow: hidden; }
+
+    .reveal h1, .reveal h2, .reveal h3, .reveal h4 {
+      font-family: var(--sans);
+      text-transform: none;
+      letter-spacing: -0.01em;
+      color: #fff;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .reveal h1 { font-size: 2.6em; font-weight: 900; }
+    .reveal h2 { font-size: 1.55em; font-weight: 800; margin-bottom: 0.5em; }
+    .reveal h3 { font-size: 0.95em; font-weight: 700; margin-bottom: 0.3em; color: var(--accent); }
+    .reveal h4 { font-size: 0.8em; font-weight: 600; color: var(--teal); }
+
+    /* ── Section title pages ── */
+    .section-title {
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      padding: 2em 0;
+    }
+    .section-title .section-num {
+      font-size: 5em;
+      font-weight: 900;
+      background: linear-gradient(135deg, var(--accent), var(--teal));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+      margin-bottom: 0.05em;
+    }
+    .section-title h2 {
+      font-size: 2em;
+      margin-bottom: 0.15em;
+    }
+    .section-title .section-sub {
+      color: var(--text-dim);
+      font-size: 0.75em;
+      max-width: 500px;
+    }
+
+    /* ── Panels / cards ── */
+    .panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      max-width: 100%;
+      overflow: hidden;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    .panel-glow-accent { box-shadow: 0 0 30px var(--accent-glow), inset 0 1px 0 rgba(245,158,11,0.08); }
+    .panel-glow-teal   { box-shadow: 0 0 30px var(--teal-glow), inset 0 1px 0 rgba(6,182,212,0.08); }
+    .panel-glow-green  { box-shadow: 0 0 30px var(--green-glow), inset 0 1px 0 rgba(34,197,94,0.08); }
+    .panel-glow-rose   { box-shadow: 0 0 30px var(--rose-glow), inset 0 1px 0 rgba(244,63,94,0.08); }
+    .panel-glow-purple { box-shadow: 0 0 30px var(--purple-glow), inset 0 1px 0 rgba(167,139,250,0.08); }
+
+    /* ── Grids ── */
+    .g { display: grid; gap: 16px; align-items: start; }
+    .g > * { min-width: 0; }
+    .g2 { grid-template-columns: 1fr 1fr; }
+    .g3 { grid-template-columns: repeat(3, 1fr); }
+    .g4 { grid-template-columns: repeat(4, 1fr); }
+    .g-61 { grid-template-columns: 3fr 2fr; }
+    .g-14 { grid-template-columns: 2fr 3fr; }
+
+    /* ── Tags / chips ── */
+    .tag {
+      display: inline-block;
+      font-size: 0.65em;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 999px;
+      margin: 3px 4px;
+      border: 1px solid;
+    }
+    .tag-amber  { color: #fde68a; border-color: rgba(245,158,11,0.4); background: rgba(245,158,11,0.12); }
+    .tag-teal   { color: #a5f3fc; border-color: rgba(6,182,212,0.4); background: rgba(6,182,212,0.12); }
+    .tag-green  { color: #bbf7d0; border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.12); }
+    .tag-rose   { color: #fda4af; border-color: rgba(244,63,94,0.4); background: rgba(244,63,94,0.12); }
+    .tag-purple { color: #ddd6fe; border-color: rgba(167,139,250,0.4); background: rgba(167,139,250,0.12); }
+
+    .chip {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 0.72em;
+      font-weight: 700;
+      margin-right: 6px;
+      border: 1px solid transparent;
+    }
+    .chip-ok    { background: rgba(34,197,94,0.15); border-color: rgba(34,197,94,0.4); color: #86efac; }
+    .chip-info  { background: rgba(96,165,250,0.15); border-color: rgba(96,165,250,0.4); color: #93c5fd; }
+    .chip-redir { background: rgba(6,182,212,0.15); border-color: rgba(6,182,212,0.4); color: #67e8f9; }
+    .chip-warn  { background: rgba(245,158,11,0.15); border-color: rgba(245,158,11,0.4); color: #fde68a; }
+    .chip-err   { background: rgba(244,63,94,0.15); border-color: rgba(244,63,94,0.4); color: #fda4af; }
+
+    /* ── Typography helpers ── */
+    .dim { color: var(--text-dim); }
+    .small { font-size: 0.78em; }
+    .xs { font-size: 0.68em; }
+    .tiny { font-size: 0.58em; }
+    .mono { font-family: var(--mono); }
+    .bold { font-weight: 700; }
+    .accent { color: var(--accent); }
+    .teal { color: var(--teal); }
+    .green { color: var(--green); }
+    .rose { color: var(--rose); }
+    .purple { color: var(--purple); }
+    .center { text-align: center; }
+    .lh { line-height: 1.65; }
+
+    /* ── Code blocks ── */
+    pre.code-block {
+      margin: 8px 0;
+      background: rgba(2, 8, 18, 0.92);
+      border: 1px solid rgba(140,180,220,0.12);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-family: var(--mono);
+      font-size: 0.72em;
+      line-height: 1.5;
+      overflow-x: auto;
+      max-width: 100%;
+      color: var(--text);
+      text-align: left;
+      white-space: pre;
+    }
+
+    /* ── Tables ── */
+    .reveal table {
+      width: 100%;
+      max-width: 100%;
+      table-layout: auto;
+      border-collapse: collapse;
+      font-size: 0.7em;
+      margin: 8px 0;
+      word-break: break-word;
+    }
+    .reveal table th {
+      background: rgba(245,158,11,0.1);
+      color: var(--accent);
+      font-weight: 700;
+      padding: 8px 10px;
+      border-bottom: 2px solid rgba(245,158,11,0.3);
+      text-align: left;
+    }
+    .reveal table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid rgba(140,180,220,0.08);
+      color: var(--text);
+    }
+    .reveal table tr:hover td {
+      background: rgba(255,255,255,0.03);
+    }
+    .reveal table code {
+      font-family: var(--mono);
+      font-size: 0.92em;
+      color: var(--teal);
+      background: rgba(6,182,212,0.08);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    /* ── Interactive elements ── */
+    .clickable-part {
+      cursor: pointer;
+      transition: all 150ms ease;
+      border-radius: 6px;
+      padding: 2px 6px;
+      display: inline-block;
+    }
+    .clickable-part:hover {
+      transform: scale(1.05);
+      filter: brightness(1.3);
+    }
+    .clickable-part.active {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      background: var(--accent-glow);
+    }
+
+    .explain-box {
+      background: rgba(2,10,20,0.95);
+      border: 1px solid var(--accent);
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-top: 10px;
+      font-size: 0.78em;
+      line-height: 1.6;
+      min-height: 60px;
+      transition: all 200ms ease;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 0.75em;
+      font-weight: 600;
+      color: var(--text);
+      background: linear-gradient(145deg, rgba(15,50,80,0.9), rgba(8,25,45,0.9));
+      border: 1px solid rgba(140,180,220,0.25);
+      border-radius: 8px;
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: all 120ms ease;
+    }
+    .btn:hover {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(245,158,11,0.15);
+    }
+    .btn-accent {
+      background: linear-gradient(145deg, rgba(245,158,11,0.2), rgba(245,158,11,0.08));
+      border-color: rgba(245,158,11,0.4);
+    }
+    .btn-teal {
+      background: linear-gradient(145deg, rgba(6,182,212,0.2), rgba(6,182,212,0.08));
+      border-color: rgba(6,182,212,0.4);
+    }
+
+    /* ── Form inputs ── */
+    .field { display: flex; flex-direction: column; gap: 4px; font-size: 0.72em; color: var(--text-dim); }
+    input, select, textarea {
+      font-family: var(--mono);
+      font-size: 0.9em;
+      color: var(--text);
+      background: rgba(2,10,20,0.9);
+      border: 1px solid rgba(140,180,220,0.25);
+      border-radius: 8px;
+      padding: 7px 10px;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+    textarea { min-height: 80px; resize: vertical; width: 100%; }
+
+    /* ── Timeline / stepper ── */
+    .timeline { list-style: none; margin: 0; padding: 0; }
+    .timeline li {
+      border-left: 3px solid rgba(6,182,212,0.3);
+      background: var(--glass);
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin: 6px 0;
+      font-size: 0.72em;
+      opacity: 0.35;
+      transition: all 200ms ease;
+    }
+    .timeline li.active {
+      opacity: 1;
+      border-left-color: var(--accent);
+      background: rgba(245,158,11,0.08);
+      transform: translateX(3px);
+    }
+
+    /* ── KPI / big number ── */
+    .kpi {
+      font-size: 2.2em;
+      font-weight: 900;
+      background: linear-gradient(135deg, var(--accent), var(--teal));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1.1;
+    }
+
+    /* ── Quiz ── */
+    .quiz-btn {
+      display: block;
+      width: 100%;
+      text-align: left;
+      font-family: var(--sans);
+      font-size: 0.78em;
+      color: var(--text);
+      background: rgba(15,36,64,0.6);
+      border: 1px solid rgba(140,180,220,0.2);
+      border-radius: 10px;
+      padding: 10px 16px;
+      margin: 6px 0;
+      cursor: pointer;
+      transition: all 150ms ease;
+    }
+    .quiz-btn:hover { border-color: var(--teal); background: rgba(6,182,212,0.08); }
+    .quiz-btn.correct { border-color: var(--green); background: rgba(34,197,94,0.12); color: #bbf7d0; }
+    .quiz-btn.wrong { border-color: var(--rose); background: rgba(244,63,94,0.08); color: #fda4af; }
+
+    /* ── Diagram boxes ── */
+    .diagram-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .diagram-box {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 10px 16px;
+      text-align: center;
+      font-size: 0.72em;
+      font-weight: 600;
+      min-width: 80px;
+    }
+    .diagram-arrow {
+      color: var(--accent);
+      font-size: 1.3em;
+      font-weight: 700;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 1000px) {
+      .g2, .g3, .g4, .g-61, .g-14 { grid-template-columns: 1fr; }
+      .reveal h1 { font-size: 1.8em; }
+      .reveal h2 { font-size: 1.2em; }
+    }
+
+    /* ── Table overflow ── */
+    .reveal table {
+      display: block;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .reveal table thead,
+    .reveal table tbody,
+    .reveal table tr {
+      display: table;
+      width: 100%;
+      table-layout: fixed;
+    }
+    .reveal table thead { display: table-header-group; }
+    .reveal table tbody { display: table-row-group; }
+
+    /* ── Slide transitions ── */
+    .reveal .slide-background { transition: background 0.6s ease; }
+    .reveal .slides section {
+      transition: opacity 0.4s ease;
+    }
+
+    /* ── Progress bar color ── */
+    .reveal .progress span { background: var(--accent); }
+    .reveal .controls { color: var(--teal); }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(140,180,220,0.2); border-radius: 3px; }
+
+    /* ── URL anatomy interactive ── */
+    .url-display {
+      font-family: var(--mono);
+      font-size: 1.1em;
+      padding: 16px 20px;
+      background: rgba(2,8,18,0.95);
+      border-radius: 12px;
+      border: 1px solid var(--panel-border);
+      text-align: center;
+      line-height: 1.8;
+      letter-spacing: 0.02em;
+    }
+    .url-part { 
+      cursor: pointer; 
+      padding: 2px 4px; 
+      border-radius: 4px; 
+      transition: all 150ms;
+      border-bottom: 2px solid transparent;
+    }
+    .url-part:hover { filter: brightness(1.4); }
+    .url-part.selected { border-bottom-color: currentColor; }
+    .url-scheme   { color: #f472b6; }
+    .url-user     { color: #c084fc; }
+    .url-host     { color: #60a5fa; }
+    .url-port     { color: #34d399; }
+    .url-path     { color: #fbbf24; }
+    .url-query    { color: #f87171; }
+    .url-fragment { color: #a78bfa; }
+    .url-sep      { color: var(--text-dim); }
+
+    /* ── HTTP message interactive ── */
+    .http-msg {
+      font-family: var(--mono);
+      font-size: 0.78em;
+      line-height: 1.7;
+      background: rgba(2,8,18,0.95);
+      border-radius: 12px;
+      border: 1px solid var(--panel-border);
+      padding: 16px 20px;
+    }
+    .msg-part {
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: all 150ms;
+    }
+    .msg-part:hover { background: rgba(255,255,255,0.08); }
+    .msg-part.selected { background: var(--accent-glow); outline: 1px solid rgba(245,158,11,0.5); }
+    .msg-request-line { color: #fbbf24; }
+    .msg-header-name  { color: #60a5fa; }
+    .msg-header-value { color: #a5f3fc; }
+    .msg-body         { color: #86efac; }
+    .msg-status-line  { color: #fbbf24; }
+    .msg-blank        { color: var(--text-dim); }
+
+    /* ── Huffman tree ── */
+    .huffman-node {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 0.85em;
+      border: 2px solid;
+    }
+
+    /* ── TLS handshake ── */
+    .handshake-step {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 0;
+      font-size: 0.72em;
+    }
+    .hs-client { color: var(--teal); min-width: 60px; text-align: right; font-weight: 700; }
+    .hs-server { color: var(--accent); min-width: 60px; font-weight: 700; }
+    .hs-arrow {
+      flex: 1;
+      height: 2px;
+      background: linear-gradient(90deg, var(--teal), var(--accent));
+      position: relative;
+      min-width: 80px;
+    }
+    .hs-arrow::after {
+      content: "→";
+      position: absolute;
+      right: -4px;
+      top: -10px;
+      color: var(--accent);
+      font-size: 1.3em;
+    }
+    .hs-arrow.reverse {
+      background: linear-gradient(90deg, var(--accent), var(--teal));
+    }
+    .hs-arrow.reverse::after {
+      content: "←";
+      left: -4px;
+      right: auto;
+      color: var(--teal);
+    }
+    .hs-label {
+      position: absolute;
+      top: -18px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.85em;
+      white-space: nowrap;
+      color: var(--text-dim);
+    }
+
+    /* ── HTTP Request Animation ── */
+    #animPacket {
+      box-shadow: 0 0 12px currentColor;
+    }
+    #animLog .anim-line {
+      opacity: 0;
+      transform: translateY(6px);
+      animation: animFadeIn 0.35s ease forwards;
+    }
+    @keyframes animFadeIn {
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes animPulse {
+      0%, 100% { box-shadow: 0 0 8px currentColor; }
+      50% { box-shadow: 0 0 22px currentColor, 0 0 40px currentColor; }
+    }
+
+    /* ── Network Layer Animation ── */
+    .layer-row {
+      display: flex;
+      align-items: stretch;
+      opacity: 0.25;
+      transform: translateX(-12px);
+      transition: opacity 0.5s ease, transform 0.5s ease, box-shadow 0.3s ease;
+    }
+    .layer-row.active {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    .layer-row.highlight {
+      opacity: 1;
+      transform: translateX(0) scale(1.02);
+    }
+    .layer-row.done {
+      opacity: 0.4;
+      transform: translateX(0);
+    }
+    .layer-label {
+      min-width: 70px;
+      padding: 4px 8px;
+      font-size: 0.55em;
+      font-weight: 700;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      text-align: right;
+      justify-content: flex-end;
+    }
+    .layer-bar {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px;
+      border-left: 3px solid var(--lc, var(--accent));
+      background: linear-gradient(90deg, color-mix(in srgb, var(--lc) 10%, transparent), transparent 70%);
+      margin: 1px 0;
+    }
+    .layer-proto {
+      font-family: var(--mono);
+      font-weight: 800;
+      font-size: 0.62em;
+      color: var(--lc, var(--text));
+      min-width: 48px;
+    }
+    .layer-data {
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: var(--mono);
+      font-size: 0.55em;
+    }
+
+    .encap-block {
+      padding: 8px 6px;
+      text-align: center;
+      font-weight: 700;
+      color: #fff;
+      opacity: 0.2;
+      background: color-mix(in srgb, var(--ec) 25%, transparent);
+      border: 2px solid var(--ec);
+      transition: opacity 0.4s ease, transform 0.3s ease;
+      flex: 1;
+      min-width: 35px;
+    }
+    .encap-block.active {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+<div class="reveal">
+<div class="slides">
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SLIDE 1 — TITLE
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <h1 style="font-size:2.8em; margin-bottom:0.1em;">HTTP Accelerator</h1>
+    <p class="dim" style="font-size:0.85em; margin-bottom:0.6em;">A Complete Deep Dive into the Hypertext Transfer Protocol</p>
+    <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:4px; max-width:680px;">
+      <span class="tag tag-amber">URL Anatomy</span>
+      <span class="tag tag-teal">DNS</span>
+      <span class="tag tag-amber">Methods</span>
+      <span class="tag tag-teal">Headers</span>
+      <span class="tag tag-green">Status Codes</span>
+      <span class="tag tag-rose">Auth &amp; JWT</span>
+      <span class="tag tag-purple">Cookies</span>
+      <span class="tag tag-amber">Caching</span>
+      <span class="tag tag-teal">CORS</span>
+      <span class="tag tag-green">Compression</span>
+      <span class="tag tag-rose">HTTP/2 &amp; HPACK</span>
+      <span class="tag tag-purple">HTTP/3 &amp; QUIC</span>
+      <span class="tag tag-amber">TLS/SSL</span>
+      <span class="tag tag-teal">Security Headers</span>
+      <span class="tag tag-green">WebSockets</span>
+      <span class="tag tag-rose">Proxies</span>
+      <span class="tag tag-purple">SSE</span>
+      <span class="tag tag-amber">Content Negotiation</span>
+    </div>
+    <p class="dim tiny" style="margin-top:18px;">Moritz Megerle · 2025</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SLIDE 2 — AGENDA
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Agenda</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <div class="small lh">
+        <p><span class="accent bold">01</span> &nbsp;HTTP Basics — What is HTTP?</p>
+        <p><span class="accent bold">02</span> &nbsp;URL Anatomy — Every Component Explained</p>
+        <p><span class="accent bold">03</span> &nbsp;DNS Resolution — From Domain to IP</p>
+        <p><span class="accent bold">04</span> &nbsp;HTTP Messages — Request, Response, Errors &amp; curl</p>
+        <p><span class="accent bold">05</span> &nbsp;Methods &amp; Semantics — GET, POST, PUT, TRACE…</p>
+        <p><span class="accent bold">06</span> &nbsp;Headers — Categories, Query/Forms, Content Negotiation</p>
+        <p><span class="accent bold">07</span> &nbsp;Status Codes — 1xx through 5xx, Redirects, Rate Limiting</p>
+      </div>
+    </div>
+    <div class="panel panel-glow-teal">
+      <div class="small lh">
+        <p><span class="teal bold">08</span> &nbsp;Browser Features — Cookies, CORS, Auth</p>
+        <p><span class="teal bold">09</span> &nbsp;Caching — ETags, Cache-Control, Conditionals</p>
+        <p><span class="teal bold">10</span> &nbsp;Compression — gzip, Brotli, zstd</p>
+        <p><span class="teal bold">11</span> &nbsp;Protocol Evolution — HTTP/1.1 → HTTP/2 → HTTP/3</p>
+        <p><span class="teal bold">12</span> &nbsp;HPACK, Huffman &amp; Binary Framing</p>
+        <p><span class="teal bold">13</span> &nbsp;TLS/SSL — Handshake &amp; Versions</p>
+        <p><span class="teal bold">14</span> &nbsp;Advanced — Range, Chunked, WebSockets, Proxies, SSE, Security</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     ANIMATED OPENER — WATCH AN HTTP REQUEST
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2 class="center" style="margin-bottom:0.3em;">Watch an HTTP Request — Live</h2>
+  <p class="center dim small" style="margin-bottom:18px;">What happens when you type a URL and press Enter?</p>
+
+  <div id="httpAnim" class="panel" style="position:relative; min-height:380px; overflow:hidden; padding:20px 28px;">
+    <!-- actors -->
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px;">
+      <div class="anim-actor" style="text-align:center;">
+        <div style="font-size:2em;">🌐</div>
+        <p class="small bold teal">Browser</p>
+      </div>
+      <div class="anim-actor" style="text-align:center;">
+        <div style="font-size:2em;">🔍</div>
+        <p class="small bold purple">DNS</p>
+      </div>
+      <div class="anim-actor" style="text-align:center;">
+        <div style="font-size:2em;">🖥️</div>
+        <p class="small bold accent">Server</p>
+      </div>
+    </div>
+
+    <!-- wire -->
+    <div style="position:relative; height:4px; background:rgba(140,180,220,0.12); border-radius:2px; margin:0 40px 18px;">
+      <div id="animPacket" style="position:absolute; width:18px; height:18px; border-radius:50%; top:-7px; left:0; opacity:0; transition: none;"></div>
+    </div>
+
+    <!-- step log -->
+    <div id="animLog" style="font-family:var(--mono); font-size:0.68em; line-height:1.9; min-height:180px;"></div>
+
+    <!-- controls -->
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <button class="btn btn-accent" id="animStart">▶ Start Animation</button>
+      <button class="btn" id="animReset">↻ Reset</button>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     ANIMATED SLIDE 2 — NETWORK LAYERS DEEP DIVE
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2 class="center" style="margin-bottom:0.15em;">From Keystroke to Wire — Every Layer</h2>
+  <p class="center dim" style="font-size:0.68em; margin-bottom:10px;">Watch your HTTP request get wrapped layer by layer, travel the wire, then unwrap at the server</p>
+
+  <!-- actors + wire -->
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin:0 20px 4px;">
+    <div style="text-align:center;"><span style="font-size:1.4em;">💻</span><p class="tiny bold teal" style="margin:2px 0 0;">Client</p></div>
+    <div style="text-align:center;"><span style="font-size:1.4em;">🔀</span><p class="tiny bold dim" style="margin:2px 0 0;">Router</p></div>
+    <div style="text-align:center;"><span style="font-size:1.4em;">🖥️</span><p class="tiny bold accent" style="margin:2px 0 0;">Server</p></div>
+  </div>
+  <div style="position:relative; height:4px; background:rgba(140,180,220,0.12); border-radius:2px; margin:0 40px 10px;">
+    <div id="layerPacket" style="position:absolute; width:16px; height:16px; border-radius:50%; top:-6px; left:0; opacity:0; transition:none;"></div>
+    <div id="layerAck" style="position:absolute; width:10px; height:10px; border-radius:50%; top:-3px; right:0; opacity:0; transition:none; border:2px solid var(--teal); background:transparent;"></div>
+  </div>
+
+  <div class="g g-61" style="gap:12px;">
+    <!-- Left: layer stack + encapsulation -->
+    <div>
+      <div id="layerStack" style="display:flex; flex-direction:column; gap:0;">
+        <div class="layer-row" id="layer-app" data-idx="0">
+          <div class="layer-label">Application</div>
+          <div class="layer-bar" style="--lc:var(--accent);">
+            <span class="layer-proto">HTTP</span>
+            <span class="layer-data">GET /users/42 HTTP/2</span>
+          </div>
+        </div>
+        <div class="layer-row" id="layer-tls" data-idx="1">
+          <div class="layer-label">Security</div>
+          <div class="layer-bar" style="--lc:var(--green);">
+            <span class="layer-proto">TLS 1.3</span>
+            <span class="layer-data">🔒 encrypted record</span>
+          </div>
+        </div>
+        <div class="layer-row" id="layer-tcp" data-idx="2">
+          <div class="layer-label">Transport</div>
+          <div class="layer-bar" style="--lc:var(--teal);">
+            <span class="layer-proto">TCP</span>
+            <span class="layer-data">:54321→:443 [PSH,ACK]</span>
+          </div>
+        </div>
+        <div class="layer-row" id="layer-ip" data-idx="3">
+          <div class="layer-label">Network</div>
+          <div class="layer-bar" style="--lc:var(--purple);">
+            <span class="layer-proto">IPv4</span>
+            <span class="layer-data">192.168.1.42→93.184.216.34</span>
+          </div>
+        </div>
+        <div class="layer-row" id="layer-eth" data-idx="4">
+          <div class="layer-label">Data Link</div>
+          <div class="layer-bar" style="--lc:var(--rose);">
+            <span class="layer-proto">Ethernet</span>
+            <span class="layer-data">MAC aa:bb→11:22 (gateway)</span>
+          </div>
+        </div>
+        <div class="layer-row" id="layer-phy" data-idx="5">
+          <div class="layer-label">Physical</div>
+          <div class="layer-bar" style="--lc:rgba(140,180,220,0.6);">
+            <span class="layer-proto">Wire</span>
+            <span class="layer-data">⚡ signals on the medium</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- encapsulation bar -->
+      <div style="display:flex; align-items:center; gap:0; margin:8px 0 0 80px; font-size:0.55em; font-family:var(--mono);">
+        <div id="encap-eth" class="encap-block" style="--ec:var(--rose);">ETH Header</div>
+        <div id="encap-ip" class="encap-block" style="--ec:var(--purple);">IP</div>
+        <div id="encap-tcp" class="encap-block" style="--ec:var(--teal);">TCP</div>
+        <div id="encap-tls" class="encap-block" style="--ec:var(--green);">TLS</div>
+        <div id="encap-http" class="encap-block" style="--ec:var(--accent);">HTTP DATA</div>
+        <div id="encap-pad" class="encap-block" style="--ec:var(--rose); font-size:0.85em;">ETH FCS <span style="font-size:0.8em; opacity:0.6;">(CRC)</span></div>
+      </div>
+
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <button class="btn btn-accent" id="layerStart" style="font-size:0.68em; padding:5px 12px;">▶ Auto</button>
+        <button class="btn btn-accent" id="layerStep" style="font-size:0.68em; padding:5px 12px;">⏭ Step</button>
+        <button class="btn" id="layerReset" style="font-size:0.68em; padding:5px 12px;">↻ Reset</button>
+        <span id="layerCounter" class="dim" style="font-size:0.6em; align-self:center; margin-left:4px;"></span>
+      </div>
+    </div>
+
+    <!-- Right: explanation box + step log -->
+    <div>
+      <div id="layerExplain" class="explain-box" style="min-height:80px; font-size:0.82em;">
+        <span class="dim">Press <strong>▶ Auto</strong> or <strong>⏭ Step</strong> to walk through the animation.</span>
+      </div>
+      <div id="layerLog" style="margin-top:6px; max-height:160px; overflow-y:auto; font-size:0.58em; line-height:1.6; font-family:var(--mono); padding:4px 8px; background:rgba(0,0,0,0.15); border-radius:6px;">
+        <span class="dim">Step log appears here…</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 01 — HTTP BASICS
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">01</div>
+    <h2>HTTP Basics</h2>
+    <p class="section-sub">Hypertext Transfer Protocol — the foundation of data communication on the Web</p>
+  </div>
+</section>
+
+<section>
+  <h2>What is HTTP?</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <h3>Definition</h3>
+      <p class="small lh">HTTP (Hypertext Transfer Protocol) is an <span class="accent bold">application-layer protocol</span> for transmitting hypermedia documents. It follows a <span class="teal bold">client-server model</span> where the client sends a request and the server returns a response.</p>
+      <p class="small lh" style="margin-top:10px;">It is <span class="bold">stateless</span> — each request is independent and carries all context needed.</p>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3>Key Properties</h3>
+      <div class="small lh">
+        <p>📡 <span class="bold">Text-based</span> (HTTP/1.x) or binary (HTTP/2+)</p>
+        <p>🔄 <span class="bold">Request → Response</span> cycle</p>
+        <p>📦 <span class="bold">Stateless</span> — no memory between requests</p>
+        <p>🔌 <span class="bold">Runs over TCP</span> (or QUIC for HTTP/3)</p>
+        <p>🔒 <span class="bold">HTTPS</span> = HTTP + TLS encryption</p>
+        <p>📋 Defined in <span class="teal">RFC 9110</span> (HTTP semantics)</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The Request/Response Cycle</h2>
+  <div class="panel center" style="padding:30px;">
+    <div class="diagram-row" style="font-size:1.1em;">
+      <div class="diagram-box" style="border-color:var(--teal);"><span class="teal bold">Client</span><br><span class="tiny dim">Browser / curl</span></div>
+      <div style="display:flex; flex-direction:column; align-items:center; gap:4px; flex:1; max-width: 300px;">
+        <div style="display:flex; align-items:center; width:100%;">
+          <div style="flex:1;height:2px;background:linear-gradient(90deg,var(--teal),var(--accent));"></div>
+          <span class="accent" style="font-size:1.2em;">→</span>
+        </div>
+        <span class="tiny dim">HTTP Request</span>
+        <span class="tiny dim" style="margin-top:8px;">HTTP Response</span>
+        <div style="display:flex; align-items:center; width:100%;">
+          <span class="teal" style="font-size:1.2em;">←</span>
+          <div style="flex:1;height:2px;background:linear-gradient(90deg,var(--accent),var(--teal));"></div>
+        </div>
+      </div>
+      <div class="diagram-box" style="border-color:var(--accent);"><span class="accent bold">Server</span><br><span class="tiny dim">nginx / Go / …</span></div>
+    </div>
+    <div class="g g3" style="margin-top:20px;">
+      <div class="panel small lh">
+        <h4>1. Client Sends Request</h4>
+        <p class="dim">Method + URL + Headers + optional Body</p>
+      </div>
+      <div class="panel small lh">
+        <h4>2. Server Processes</h4>
+        <p class="dim">Routes, authenticates, reads/writes data</p>
+      </div>
+      <div class="panel small lh">
+        <h4>3. Server Returns Response</h4>
+        <p class="dim">Status code + Headers + optional Body</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 02 — URL ANATOMY (INTERACTIVE)
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">02</div>
+    <h2>URL Anatomy</h2>
+    <p class="section-sub">Every component of a URL explained — click each part to learn more</p>
+  </div>
+</section>
+
+<section>
+  <h2>Interactive URL Parser</h2>
+  <p class="dim small">Click any colored part of the URL to see its explanation below.</p>
+  <div class="panel" style="margin:14px 0;">
+    <div class="url-display" id="urlDisplay">
+      <span class="url-part url-scheme" data-part="scheme" onclick="explainUrl(this)">https</span><span class="url-sep">://</span><span class="url-part url-user" data-part="userinfo" onclick="explainUrl(this)">admin:s3cret</span><span class="url-sep">@</span><span class="url-part url-host" data-part="host" onclick="explainUrl(this)">api.example.com</span><span class="url-sep">:</span><span class="url-part url-port" data-part="port" onclick="explainUrl(this)">8443</span><span class="url-part url-path" data-part="path" onclick="explainUrl(this)">/v2/users/42</span><span class="url-sep">?</span><span class="url-part url-query" data-part="query" onclick="explainUrl(this)">fields=name,email&amp;lang=en</span><span class="url-sep">#</span><span class="url-part url-fragment" data-part="fragment" onclick="explainUrl(this)">section-3</span>
+    </div>
+  </div>
+  <div class="g g2">
+    <div id="urlExplain" class="explain-box">
+      <span class="dim">← Click any colored part above to see details</span>
+    </div>
+    <div class="panel small">
+      <h3>Full Structure</h3>
+      <pre class="code-block" style="font-size:0.85em;">scheme://userinfo@host:port/path?query#fragment</pre>
+      <div class="tiny dim lh" style="margin-top:8px;">
+        <p><span class="url-scheme">■</span> Scheme &nbsp; <span class="url-user">■</span> Userinfo &nbsp; <span class="url-host">■</span> Host &nbsp; <span class="url-port">■</span> Port</p>
+        <p><span class="url-path">■</span> Path &nbsp; <span class="url-query">■</span> Query &nbsp; <span class="url-fragment">■</span> Fragment</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 03 — DNS
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">03</div>
+    <h2>DNS Resolution</h2>
+    <p class="section-sub">How a hostname becomes an IP address</p>
+  </div>
+</section>
+
+<section>
+  <h2>DNS Resolution — Step by Step</h2>
+  <div class="g g-61">
+    <div class="panel">
+      <h3>Interactive Walkthrough</h3>
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <button class="btn" id="dnsPrev">◀ Prev</button>
+        <button class="btn btn-accent" id="dnsNext">Next ▶</button>
+        <button class="btn" id="dnsReset">↺ Reset</button>
+      </div>
+      <div id="dnsExplain" class="explain-box">Press <strong>Next</strong> to walk through DNS resolution.</div>
+    </div>
+    <div class="panel">
+      <h3 style="color:var(--teal);">Resolution Flow</h3>
+      <ol id="dnsTimeline" class="timeline">
+        <li>Browser &amp; OS cache lookup</li>
+        <li>Query recursive resolver (ISP / 8.8.8.8)</li>
+        <li>Root nameserver referral (.)</li>
+        <li>TLD nameserver referral (.com)</li>
+        <li>Authoritative NS → A/AAAA record</li>
+        <li>Cache by TTL → connect to IP</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>From URL to HTTP Bytes</h2>
+  <div class="panel center" style="padding:24px;">
+    <div class="diagram-row" style="flex-wrap:nowrap;">
+      <div class="diagram-box" style="border-color:var(--teal);">URL</div>
+      <div class="diagram-arrow">→</div>
+      <div class="diagram-box" style="border-color:var(--purple);">DNS</div>
+      <div class="diagram-arrow">→</div>
+      <div class="diagram-box" style="border-color:var(--green);">TCP</div>
+      <div class="diagram-arrow">→</div>
+      <div class="diagram-box" style="border-color:var(--accent);">TLS</div>
+      <div class="diagram-arrow">→</div>
+      <div class="diagram-box" style="border-color:var(--rose);">HTTP</div>
+      <div class="diagram-arrow">→</div>
+      <div class="diagram-box" style="border-color:var(--teal);">Response</div>
+    </div>
+  </div>
+  <div class="g g3" style="margin-top:14px;">
+    <div class="panel small lh">
+      <h4>1. DNS → IP</h4>
+      <p class="dim">Resolve hostname to IP address via DNS hierarchy.</p>
+    </div>
+    <div class="panel small lh">
+      <h4>2. TCP Handshake</h4>
+      <p class="dim">SYN → SYN-ACK → ACK. Three-way handshake establishes connection.</p>
+    </div>
+    <div class="panel small lh">
+      <h4>3. TLS Handshake (HTTPS)</h4>
+      <p class="dim">ClientHello → ServerHello → Certificate → Key exchange → Finished.</p>
+    </div>
+    <div class="panel small lh">
+      <h4>4. Send Request</h4>
+      <p class="dim">HTTP request bytes flow over the encrypted TCP connection.</p>
+    </div>
+    <div class="panel small lh">
+      <h4>5. Receive Response</h4>
+      <p class="dim">Server processes and returns status + headers + body.</p>
+    </div>
+    <div class="panel small lh">
+      <h4>6. Connection Reuse</h4>
+      <p class="dim">Keep-alive (HTTP/1.1) or multiplexing (HTTP/2) for efficiency.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 04 — HTTP MESSAGES (INTERACTIVE)
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">04</div>
+    <h2>HTTP Messages</h2>
+    <p class="section-sub">Anatomy of requests and responses — explore requests, errors, redirects &amp; raw wire format</p>
+  </div>
+</section>
+
+<section>
+  <h2>HTTP Request — Click to Explore</h2>
+  <div class="g g-61">
+    <div class="panel">
+      <div class="http-msg" id="reqMsg">
+        <div class="msg-part msg-request-line" data-explain="request-line" onclick="explainMsg(this,'req')">POST /api/users?role=admin HTTP/1.1</div>
+        <div class="msg-part msg-header-name" data-explain="host" onclick="explainMsg(this,'req')"><span style="color:#60a5fa">Host:</span> <span style="color:#a5f3fc">api.example.com</span></div>
+        <div class="msg-part msg-header-name" data-explain="content-type" onclick="explainMsg(this,'req')"><span style="color:#60a5fa">Content-Type:</span> <span style="color:#a5f3fc">application/json</span></div>
+        <div class="msg-part msg-header-name" data-explain="content-length" onclick="explainMsg(this,'req')"><span style="color:#60a5fa">Content-Length:</span> <span style="color:#a5f3fc">47</span></div>
+        <div class="msg-part msg-header-name" data-explain="authorization" onclick="explainMsg(this,'req')"><span style="color:#60a5fa">Authorization:</span> <span style="color:#a5f3fc">Bearer eyJhbGci…</span></div>
+        <div class="msg-part msg-header-name" data-explain="accept" onclick="explainMsg(this,'req')"><span style="color:#60a5fa">Accept:</span> <span style="color:#a5f3fc">application/json</span></div>
+        <div class="msg-part msg-blank" data-explain="blank-line" onclick="explainMsg(this,'req')" style="color:var(--text-dim);">↵ <span class="tiny">(blank line — separates headers from body)</span></div>
+        <div class="msg-part msg-body" data-explain="body" onclick="explainMsg(this,'req')">{"name":"Ada Lovelace","email":"ada@example.com"}</div>
+      </div>
+    </div>
+    <div>
+      <div id="reqExplainBox" class="explain-box">
+        <span class="dim">← Click any line of the request to see what it does</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>HTTP Response — Click to Explore</h2>
+  <div class="g g-61">
+    <div class="panel">
+      <div class="http-msg" id="resMsg">
+        <div class="msg-part msg-status-line" data-explain="status-line" onclick="explainMsg(this,'res')">HTTP/1.1 201 Created</div>
+        <div class="msg-part msg-header-name" data-explain="res-content-type" onclick="explainMsg(this,'res')"><span style="color:#60a5fa">Content-Type:</span> <span style="color:#a5f3fc">application/json; charset=utf-8</span></div>
+        <div class="msg-part msg-header-name" data-explain="res-content-length" onclick="explainMsg(this,'res')"><span style="color:#60a5fa">Content-Length:</span> <span style="color:#a5f3fc">83</span></div>
+        <div class="msg-part msg-header-name" data-explain="res-location" onclick="explainMsg(this,'res')"><span style="color:#60a5fa">Location:</span> <span style="color:#a5f3fc">/api/users/1337</span></div>
+        <div class="msg-part msg-header-name" data-explain="res-date" onclick="explainMsg(this,'res')"><span style="color:#60a5fa">Date:</span> <span style="color:#a5f3fc">Tue, 08 Apr 2025 10:00:00 GMT</span></div>
+        <div class="msg-part msg-header-name" data-explain="res-cache" onclick="explainMsg(this,'res')"><span style="color:#60a5fa">Cache-Control:</span> <span style="color:#a5f3fc">no-cache</span></div>
+        <div class="msg-part msg-blank" data-explain="res-blank" onclick="explainMsg(this,'res')" style="color:var(--text-dim);">↵ <span class="tiny">(blank line)</span></div>
+        <div class="msg-part msg-body" data-explain="res-body" onclick="explainMsg(this,'res')">{"id":1337,"name":"Ada Lovelace","created":"2025-04-08T10:00:00Z"}</div>
+      </div>
+    </div>
+    <div>
+      <div id="resExplainBox" class="explain-box">
+        <span class="dim">← Click any line of the response to see what it does</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Body Formats</h2>
+  <div class="g g3">
+    <div class="panel panel-glow-accent">
+      <h3>JSON</h3>
+      <pre class="code-block">Content-Type: application/json
+
+{
+  "name": "Ada",
+  "role": "engineer"
+}</pre>
+      <p class="tiny dim" style="margin-top:6px;">Most common in modern APIs. Lightweight, human-readable.</p>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3>Form URL-Encoded</h3>
+      <pre class="code-block">Content-Type:
+  application/x-www-form-urlencoded
+
+name=Ada&amp;role=engineer</pre>
+      <p class="tiny dim" style="margin-top:6px;">Default for HTML forms. Key-value pairs, URL-encoded.</p>
+    </div>
+    <div class="panel panel-glow-purple">
+      <h3>Multipart Form Data</h3>
+      <pre class="code-block">Content-Type:
+  multipart/form-data; boundary=---X
+
+-----X
+Content-Disposition:
+  form-data; name="file";
+  filename="photo.jpg"
+
+(binary data)
+-----X--</pre>
+      <p class="tiny dim" style="margin-top:6px;">File uploads. Each part has its own headers.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 04b — MORE MESSAGE EXAMPLES
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>GET Request &amp; Response</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Request</h3>
+      <pre class="code-block">GET /api/users/42 HTTP/1.1
+Host: api.example.com
+Accept: application/json
+Accept-Encoding: gzip, br
+If-None-Match: "a1b2c3"</pre>
+      <p class="tiny dim" style="margin-top:6px;">No body — GET never sends one. <code>If-None-Match</code> enables cache validation.</p>
+    </div>
+    <div class="panel panel-glow-green">
+      <h3 style="color:var(--green)">Response</h3>
+      <pre class="code-block">HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+Content-Length: 82
+ETag: "d4e5f6"
+Cache-Control: max-age=300
+
+{"id":42,"name":"Ada Lovelace",
+ "email":"ada@example.com"}</pre>
+      <p class="tiny dim" style="margin-top:6px;">200 OK with new ETag — cached for 5 minutes.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Redirect Example — 301 Moved Permanently</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <h3>Request to Old URL</h3>
+      <pre class="code-block">GET /old-page HTTP/1.1
+Host: www.example.com
+Accept: text/html</pre>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Redirect Response</h3>
+      <pre class="code-block">HTTP/1.1 301 Moved Permanently
+Location: https://www.example.com/new-page
+Content-Length: 0</pre>
+      <p class="tiny dim" style="margin-top:6px;">Browser automatically follows the <code>Location</code> header. Search engines update the URL permanently.</p>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:14px;">
+    <h3>Second request (automatic follow)</h3>
+    <pre class="code-block" style="font-size:0.7em;">GET /new-page HTTP/1.1
+Host: www.example.com
+
+HTTP/1.1 200 OK
+Content-Type: text/html
+…</pre>
+  </div>
+</section>
+
+<section>
+  <h2>Error Responses — 4xx &amp; 5xx</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <h3>400 Bad Request</h3>
+      <pre class="code-block" style="font-size:0.75em;">POST /api/users HTTP/1.1
+Content-Type: application/json
+
+{"name": }  ← malformed JSON
+
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+
+{"error":"invalid_json",
+ "message":"Unexpected token } at pos 9"}</pre>
+      <p class="tiny dim" style="margin-top:6px;">Client sent something the server cannot parse.</p>
+    </div>
+    <div class="panel panel-glow-rose">
+      <h3 style="color:var(--rose)">404 Not Found</h3>
+      <pre class="code-block" style="font-size:0.75em;">GET /api/users/99999 HTTP/1.1
+Accept: application/json
+
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+
+{"error":"not_found",
+ "message":"User 99999 does not exist"}</pre>
+      <p class="tiny dim" style="margin-top:6px;">Resource doesn't exist. Unlike 410 Gone, it <em>might</em> appear in the future.</p>
+    </div>
+  </div>
+  <div class="g g2" style="margin-top:14px;">
+    <div class="panel panel-glow-purple">
+      <h3 style="color:var(--purple)">401 Unauthorized</h3>
+      <pre class="code-block" style="font-size:0.75em;">GET /api/admin HTTP/1.1
+← no Authorization header
+
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="api"</pre>
+      <p class="tiny dim" style="margin-top:4px;">Missing or invalid credentials. Includes <code>WWW-Authenticate</code> to tell the client how to authenticate.</p>
+    </div>
+    <div class="panel" style="border-left:4px solid rgba(244,63,94,0.6);">
+      <h3 style="color:var(--rose)">500 Internal Server Error</h3>
+      <pre class="code-block" style="font-size:0.75em;">GET /api/reports HTTP/1.1
+
+HTTP/1.1 500 Internal Server Error
+Content-Type: application/json
+
+{"error":"internal",
+ "message":"An unexpected error occurred"}</pre>
+      <p class="tiny dim" style="margin-top:4px;">Server-side bug. Never expose stack traces in production!</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>HTTP on the Wire — <code>curl -v</code></h2>
+  <div class="panel panel-glow-teal">
+    <pre class="code-block" style="font-size:0.65em; line-height:1.55; max-height:420px; overflow-y:auto;"><span class="dim">$ curl -v https://api.example.com/users/42</span>
+<span class="teal">*   Trying 93.184.216.34:443...</span>
+<span class="teal">* Connected to api.example.com (93.184.216.34) port 443</span>
+<span class="teal">* ALPN: offers h2, http/1.1</span>
+<span class="teal">* TLS handshake completed (TLSv1.3 / TLS_AES_256_GCM_SHA384)</span>
+<span class="teal">* using HTTP/2</span>
+
+<span class="accent">&gt; GET /users/42 HTTP/2</span>
+<span class="accent">&gt; Host: api.example.com</span>
+<span class="accent">&gt; User-Agent: curl/8.6.0</span>
+<span class="accent">&gt; Accept: */*</span>
+<span class="accent">&gt;</span>
+
+<span class="green">&lt; HTTP/2 200</span>
+<span class="green">&lt; content-type: application/json; charset=utf-8</span>
+<span class="green">&lt; content-length: 82</span>
+<span class="green">&lt; etag: "d4e5f6"</span>
+<span class="green">&lt; cache-control: max-age=300</span>
+<span class="green">&lt; strict-transport-security: max-age=31536000</span>
+<span class="green">&lt;</span>
+
+{"id":42,"name":"Ada Lovelace","email":"ada@example.com"}</pre>
+    <div class="g g3" style="margin-top:10px;">
+      <p class="tiny"><span class="teal bold">*</span> = connection info (TCP, TLS, protocol)</p>
+      <p class="tiny"><span class="accent bold">&gt;</span> = request sent by client</p>
+      <p class="tiny"><span class="green bold">&lt;</span> = response received from server</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 05 — HTTP METHODS
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">05</div>
+    <h2>HTTP Methods</h2>
+    <p class="section-sub">Safe, idempotent, cacheable — know the semantics</p>
+  </div>
+</section>
+
+<section>
+  <h2>Methods &amp; Their Properties</h2>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr>
+          <th>Method</th>
+          <th>Purpose</th>
+          <th>Safe</th>
+          <th>Idempotent</th>
+          <th>Cacheable</th>
+          <th>Typical Use</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>GET</code></td><td>Retrieve a resource</td><td class="green">✅ Yes</td><td class="green">✅ Yes</td><td class="green">✅ Yes</td><td class="dim">Read web pages, API data</td></tr>
+        <tr><td><code>HEAD</code></td><td>Headers only, no body</td><td class="green">✅ Yes</td><td class="green">✅ Yes</td><td class="green">✅ Yes</td><td class="dim">Check if resource exists/changed</td></tr>
+        <tr><td><code>POST</code></td><td>Create / submit data</td><td class="rose">❌ No</td><td class="rose">❌ No</td><td class="accent">🔶 Sometimes</td><td class="dim">Forms, create records</td></tr>
+        <tr><td><code>PUT</code></td><td>Replace entire resource</td><td class="rose">❌ No</td><td class="green">✅ Yes</td><td class="rose">❌ No</td><td class="dim">Full update</td></tr>
+        <tr><td><code>PATCH</code></td><td>Partial modification</td><td class="rose">❌ No</td><td class="accent">🔶 Usually</td><td class="rose">❌ No</td><td class="dim">Partial update</td></tr>
+        <tr><td><code>DELETE</code></td><td>Remove a resource</td><td class="rose">❌ No</td><td class="green">✅ Yes</td><td class="rose">❌ No</td><td class="dim">Delete records</td></tr>
+        <tr><td><code>OPTIONS</code></td><td>Discover capabilities</td><td class="green">✅ Yes</td><td class="green">✅ Yes</td><td class="rose">❌ No</td><td class="dim">CORS preflight</td></tr>
+        <tr><td><code>TRACE</code></td><td>Loop-back diagnostic</td><td class="green">✅ Yes</td><td class="green">✅ Yes</td><td class="rose">❌ No</td><td class="dim">Debug proxy chains</td></tr>
+        <tr><td><code>CONNECT</code></td><td>Establish TCP tunnel</td><td class="rose">❌ No</td><td class="rose">❌ No</td><td class="rose">❌ No</td><td class="dim">HTTPS through proxies</td></tr>
+      </tbody>
+    </table>
+    <p class="tiny dim" style="margin-top:8px;">Reference: <span class="accent">RFC 9110</span> — HTTP Semantics. TRACE is often disabled for security (cross-site tracing). CONNECT is used by HTTP proxies to tunnel TLS traffic.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Method Semantics Explained</h2>
+  <div class="g g3">
+    <div class="panel panel-glow-green">
+      <h3 style="color:var(--green)">Safe</h3>
+      <p class="small lh">A method is <strong>safe</strong> if it does not modify server state. GET and HEAD are safe — calling them has no side effects.</p>
+      <p class="tiny dim" style="margin-top:6px;">Safe methods can be prefetched, cached, and retried freely.</p>
+    </div>
+    <div class="panel panel-glow-accent">
+      <h3>Idempotent</h3>
+      <p class="small lh">A method is <strong>idempotent</strong> if calling it N times produces the same result as calling it once. PUT and DELETE are idempotent.</p>
+      <p class="tiny dim" style="margin-top:6px;">POST is NOT idempotent — each call may create a new resource.</p>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Cacheable</h3>
+      <p class="small lh">A method is <strong>cacheable</strong> if its response can be stored for future reuse. Only GET and HEAD are cacheable by default.</p>
+      <p class="tiny dim" style="margin-top:6px;">POST responses can be cached if explicit Cache-Control is set.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 06 — HEADERS DEEP DIVE
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">06</div>
+    <h2>Headers Deep Dive</h2>
+    <p class="section-sub">Request headers, response headers, and their categories</p>
+  </div>
+</section>
+
+<section>
+  <h2>Typical Request Headers (Client → Server)</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Header</th><th>Description</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><code>Host</code></td><td>Target hostname <span class="tag tag-rose" style="font-size:0.7em;">Required in HTTP/1.1</span></td><td class="dim">Host: www.example.com</td></tr>
+        <tr><td><code>User-Agent</code></td><td>Client identification string</td><td class="dim">User-Agent: Mozilla/5.0 …</td></tr>
+        <tr><td><code>Accept</code></td><td>Formats the client can handle</td><td class="dim">Accept: text/html, application/json</td></tr>
+        <tr><td><code>Accept-Language</code></td><td>Preferred language</td><td class="dim">Accept-Language: de-DE,de;q=0.9</td></tr>
+        <tr><td><code>Accept-Encoding</code></td><td>Supported compressions</td><td class="dim">Accept-Encoding: gzip, br</td></tr>
+        <tr><td><code>Referer</code></td><td>Origin URL of the request</td><td class="dim">Referer: https://example.com/start</td></tr>
+        <tr><td><code>Authorization</code></td><td>Credentials for authentication</td><td class="dim">Authorization: Bearer eyJhb…</td></tr>
+        <tr><td><code>Cookie</code></td><td>Session/tracking data</td><td class="dim">Cookie: sessionid=abc123</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Typical Response Headers (Server → Client)</h2>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Header</th><th>Description</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><code>Server</code></td><td>Server software name/version</td><td class="dim">Server: nginx/1.23.1</td></tr>
+        <tr><td><code>Date</code></td><td>Response timestamp</td><td class="dim">Date: Tue, 07 Oct 2025 09:30:00 GMT</td></tr>
+        <tr><td><code>Content-Type</code></td><td>Media type of the body</td><td class="dim">Content-Type: application/json; charset=utf-8</td></tr>
+        <tr><td><code>Content-Length</code></td><td>Body size in bytes</td><td class="dim">Content-Length: 342</td></tr>
+        <tr><td><code>Content-Encoding</code></td><td>Compression algorithm used</td><td class="dim">Content-Encoding: gzip</td></tr>
+        <tr><td><code>Location</code></td><td>Redirect target URL</td><td class="dim">Location: https://new.example.com</td></tr>
+        <tr><td><code>Set-Cookie</code></td><td>Send cookie to client</td><td class="dim">Set-Cookie: sid=abc; HttpOnly; Secure</td></tr>
+        <tr><td><code>Cache-Control</code></td><td>Caching rules</td><td class="dim">Cache-Control: max-age=3600</td></tr>
+        <tr><td><code>ETag</code></td><td>Resource version for caching</td><td class="dim">ETag: "abc123xyz"</td></tr>
+        <tr><td><code>Strict-Transport-Security</code></td><td>Enforce HTTPS</td><td class="dim">max-age=31536000; includeSubDomains</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Header Categories</h2>
+  <div class="g g2">
+    <div>
+      <div class="panel panel-glow-accent" style="margin-bottom:14px;">
+        <h3>General Headers</h3>
+        <p class="small dim lh">Apply to both request and response.</p>
+        <p class="small"><code>Date</code>, <code>Connection</code>, <code>Cache-Control</code>, <code>Via</code>, <code>Transfer-Encoding</code></p>
+      </div>
+      <div class="panel panel-glow-teal" style="margin-bottom:14px;">
+        <h3 style="color:var(--teal)">Entity / Representation Headers</h3>
+        <p class="small dim lh">Describe the body (content).</p>
+        <p class="small"><code>Content-Type</code>, <code>Content-Length</code>, <code>Content-Language</code>, <code>Content-Encoding</code></p>
+      </div>
+      <div class="panel panel-glow-green">
+        <h3 style="color:var(--green)">Cache / Conditional Headers</h3>
+        <p class="small dim lh">Control caching and validation.</p>
+        <p class="small"><code>Cache-Control</code>, <code>Expires</code>, <code>ETag</code>, <code>If-Modified-Since</code>, <code>If-None-Match</code></p>
+      </div>
+    </div>
+    <div>
+      <div class="panel panel-glow-rose" style="margin-bottom:14px;">
+        <h3 style="color:var(--rose)">Security Headers</h3>
+        <p class="small dim lh">Protect against attacks.</p>
+        <p class="small"><code>Strict-Transport-Security</code>, <code>Content-Security-Policy</code>, <code>X-Frame-Options</code>, <code>X-Content-Type-Options</code></p>
+      </div>
+      <div class="panel panel-glow-purple">
+        <h3 style="color:var(--purple)">CORS Headers</h3>
+        <p class="small dim lh">Cross-origin access control.</p>
+        <p class="small"><code>Access-Control-Allow-Origin</code>, <code>Access-Control-Allow-Methods</code>, <code>Access-Control-Allow-Headers</code></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Query Parameters &amp; Form Data</h2>
+  <div class="g g3">
+    <div class="panel panel-glow-accent">
+      <h3>URL Query Parameters</h3>
+      <pre class="code-block" style="font-size:0.75em;">GET /api/users?role=admin&amp;page=2&amp;limit=20 HTTP/1.1
+Host: api.example.com</pre>
+      <p class="small lh" style="margin-top:8px;">Key-value pairs in the URL after <code>?</code>, separated by <code>&amp;</code>.</p>
+      <p class="tiny dim">Used for filtering, sorting, pagination. Visible in browser URL bar, bookmarkable, cached by proxies.</p>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Form URL-Encoded Body</h3>
+      <pre class="code-block" style="font-size:0.75em;">POST /login HTTP/1.1
+Content-Type:
+  application/x-www-form-urlencoded
+
+username=ada&amp;password=secret123</pre>
+      <p class="small lh" style="margin-top:8px;">Same <code>key=value&amp;key=value</code> format, but in the <strong>body</strong>.</p>
+      <p class="tiny dim">Default for HTML <code>&lt;form&gt;</code> submissions. Not in URL → not cached, not in logs.</p>
+    </div>
+    <div class="panel panel-glow-purple">
+      <h3 style="color:var(--purple)">JSON Body (API-Style)</h3>
+      <pre class="code-block" style="font-size:0.75em;">POST /api/users HTTP/1.1
+Content-Type: application/json
+
+{"username":"ada",
+ "role":"admin",
+ "tags":["dev","lead"]}</pre>
+      <p class="small lh" style="margin-top:8px;">Structured data: nested objects, arrays, types.</p>
+      <p class="tiny dim">Standard for modern REST APIs. Requires explicit <code>Content-Type</code>.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Content Negotiation</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <h3>How It Works</h3>
+      <p class="small lh">The client tells the server which formats, languages, and encodings it accepts. The server picks the best match.</p>
+      <pre class="code-block" style="font-size:0.75em;">GET /api/users/42 HTTP/1.1
+Accept: application/xml;q=0.9, application/json;q=1.0
+Accept-Language: de-DE, en;q=0.8
+Accept-Encoding: br, gzip;q=0.8</pre>
+      <p class="tiny dim" style="margin-top:6px;"><code>q</code> = quality factor (0–1). Higher = more preferred. Default is 1.0.</p>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Server Responses</h3>
+      <div class="g" style="gap:10px;">
+        <div class="panel small lh" style="border-left:3px solid var(--green);">
+          <p><span class="green bold">✅ Match found</span></p>
+          <pre class="code-block" style="font-size:0.85em;">HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Language: de-DE
+Vary: Accept, Accept-Language</pre>
+          <p class="tiny dim" style="margin-top:4px;"><code>Vary</code> tells caches: this response depends on these request headers.</p>
+        </div>
+        <div class="panel small lh" style="border-left:3px solid var(--rose);">
+          <p><span class="rose bold">❌ No match</span></p>
+          <pre class="code-block" style="font-size:0.85em;">HTTP/1.1 406 Not Acceptable
+Content-Type: application/json
+
+{"error":"Server cannot produce
+  application/xml or application/json"}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 07 — STATUS CODES
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">07</div>
+    <h2>Status Codes</h2>
+    <p class="section-sub">Understanding every class of HTTP response status</p>
+  </div>
+</section>
+
+<section>
+  <h2>Status Code Classes</h2>
+  <div class="g g2" style="align-items:stretch;">
+    <div>
+      <div class="panel" style="margin-bottom:14px; border-left:4px solid rgba(96,165,250,0.6);">
+        <p><span class="chip chip-info">1xx</span> <span class="bold">Informational</span></p>
+        <p class="small dim lh">Interim response. The request was received, processing continues.</p>
+        <p class="tiny"><code>100 Continue</code> · <code>101 Switching Protocols</code> · <code>103 Early Hints</code></p>
+      </div>
+      <div class="panel" style="margin-bottom:14px; border-left:4px solid rgba(34,197,94,0.6);">
+        <p><span class="chip chip-ok">2xx</span> <span class="bold">Success</span></p>
+        <p class="small dim lh">The request was successfully received, understood, and accepted.</p>
+        <p class="tiny"><code>200 OK</code> · <code>201 Created</code> · <code>204 No Content</code> · <code>206 Partial Content</code></p>
+      </div>
+      <div class="panel" style="border-left:4px solid rgba(6,182,212,0.6);">
+        <p><span class="chip chip-redir">3xx</span> <span class="bold">Redirection</span></p>
+        <p class="small dim lh">Further action needed to complete the request.</p>
+        <p class="tiny"><code>301 Moved Permanently</code> · <code>302 Found</code> · <code>304 Not Modified</code> · <code>307 Temporary Redirect</code></p>
+      </div>
+    </div>
+    <div>
+      <div class="panel" style="margin-bottom:14px; border-left:4px solid rgba(245,158,11,0.6);">
+        <p><span class="chip chip-warn">4xx</span> <span class="bold">Client Error</span></p>
+        <p class="small dim lh">The request contains bad syntax or cannot be fulfilled.</p>
+        <p class="tiny"><code>400 Bad Request</code> · <code>401 Unauthorized</code> · <code>403 Forbidden</code> · <code>404 Not Found</code> · <code>405 Method Not Allowed</code> · <code>409 Conflict</code> · <code>429 Too Many Requests</code></p>
+      </div>
+      <div class="panel" style="border-left:4px solid rgba(244,63,94,0.6);">
+        <p><span class="chip chip-err">5xx</span> <span class="bold">Server Error</span></p>
+        <p class="small dim lh">The server failed to fulfill a valid request.</p>
+        <p class="tiny"><code>500 Internal Server Error</code> · <code>502 Bad Gateway</code> · <code>503 Service Unavailable</code> · <code>504 Gateway Timeout</code></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Important Status Codes in Detail</h2>
+  <div class="g g3">
+    <div class="panel panel-glow-green small lh">
+      <h3 style="color:var(--green)">200 OK</h3>
+      <p>Standard success response. Body contains the requested resource or result.</p>
+    </div>
+    <div class="panel panel-glow-green small lh">
+      <h3 style="color:var(--green)">201 Created</h3>
+      <p>New resource was created. Typically returned by POST. <code>Location</code> header points to the new resource.</p>
+    </div>
+    <div class="panel panel-glow-green small lh">
+      <h3 style="color:var(--green)">204 No Content</h3>
+      <p>Success, but no response body. Common for DELETE or PUT where no data needs returning.</p>
+    </div>
+    <div class="panel panel-glow-teal small lh">
+      <h3 style="color:var(--teal)">301 Moved Permanently</h3>
+      <p>Resource has moved forever. Clients and search engines update the URL. <code>Location</code> header has the new URL.</p>
+    </div>
+    <div class="panel panel-glow-teal small lh">
+      <h3 style="color:var(--teal)">304 Not Modified</h3>
+      <p>Cache validation success. Client's cached version is still fresh — no body transferred, saving bandwidth.</p>
+    </div>
+    <div class="panel panel-glow-accent small lh">
+      <h3>206 Partial Content</h3>
+      <p>Only part of the resource returned (Range request). Used for resumable downloads and video streaming.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Redirect Codes — 301 vs 302 vs 307 vs 308</h2>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>Code</th><th>Name</th><th>Permanent?</th><th>Method Change?</th><th>When to Use</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>301</code></td><td class="bold">Moved Permanently</td>
+          <td class="green">✅ Yes</td>
+          <td class="accent">⚠️ May change POST→GET</td>
+          <td class="small dim">Permanent URL change (SEO-friendly)</td>
+        </tr>
+        <tr>
+          <td><code>302</code></td><td class="bold">Found</td>
+          <td class="rose">❌ No</td>
+          <td class="accent">⚠️ May change POST→GET</td>
+          <td class="small dim">Temporary redirect (legacy)</td>
+        </tr>
+        <tr>
+          <td><code>307</code></td><td class="bold">Temporary Redirect</td>
+          <td class="rose">❌ No</td>
+          <td class="green">✅ Method preserved</td>
+          <td class="small dim">Temporary redirect — keeps POST as POST</td>
+        </tr>
+        <tr>
+          <td><code>308</code></td><td class="bold">Permanent Redirect</td>
+          <td class="green">✅ Yes</td>
+          <td class="green">✅ Method preserved</td>
+          <td class="small dim">Permanent URL change — keeps POST as POST</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="g g2" style="margin-top:14px;">
+    <div class="panel panel-glow-accent small lh">
+      <h3>The Method-Change Trap</h3>
+      <p>With <code>301</code> and <code>302</code>, browsers historically changed <code>POST</code> to <code>GET</code> on redirect — even though the spec says they shouldn't.</p>
+      <p style="margin-top:6px;"><span class="green bold">Fix:</span> Use <code>307</code>/<code>308</code> when you need the HTTP method to stay the same (e.g. redirecting a POST to a new API endpoint).</p>
+    </div>
+    <div class="panel panel-glow-teal small lh">
+      <h3 style="color:var(--teal)">Quick Rule</h3>
+      <p><span class="bold">Permanent + safe to change method?</span> → <code>301</code></p>
+      <p><span class="bold">Permanent + keep method?</span> → <code>308</code></p>
+      <p><span class="bold">Temporary + safe to change method?</span> → <code>302</code></p>
+      <p><span class="bold">Temporary + keep method?</span> → <code>307</code></p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Rate Limiting — 429 Too Many Requests</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-rose">
+      <h3 style="color:var(--rose)">How It Works</h3>
+      <p class="small lh">Servers enforce rate limits to prevent abuse. When exceeded, they respond with <code>429</code>.</p>
+      <pre class="code-block" style="font-size:0.75em;">GET /api/search?q=cats HTTP/1.1
+
+HTTP/1.1 429 Too Many Requests
+Retry-After: 30
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1712577600
+Content-Type: application/json
+
+{"error":"rate_limit_exceeded",
+ "message":"Try again in 30 seconds"}</pre>
+    </div>
+    <div class="panel panel-glow-accent">
+      <h3>Rate Limit Headers</h3>
+      <table>
+        <thead><tr><th>Header</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>Retry-After</code></td><td class="small">Seconds to wait (or HTTP-date) — <span class="tag tag-rose" style="font-size:0.7em;">Standard</span></td></tr>
+          <tr><td><code>X-RateLimit-Limit</code></td><td class="small">Max requests per window</td></tr>
+          <tr><td><code>X-RateLimit-Remaining</code></td><td class="small">Requests left in current window</td></tr>
+          <tr><td><code>X-RateLimit-Reset</code></td><td class="small">Unix timestamp when the window resets</td></tr>
+        </tbody>
+      </table>
+      <p class="tiny dim" style="margin-top:8px;">The <code>X-RateLimit-*</code> headers are widely used conventions, not an official standard (though <span class="accent">RFC 6585</span> defines 429 itself).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 08 — BROWSER FEATURES (COOKIES, CORS, AUTH)
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">08</div>
+    <h2>Browser Features</h2>
+    <p class="section-sub">Cookies, CORS, and Authentication — things browsers do with HTTP</p>
+  </div>
+</section>
+
+<!-- COOKIES -->
+<section>
+  <h2>Cookies</h2>
+  <div class="g g-61">
+    <div class="panel panel-glow-purple">
+      <h3 style="color:var(--purple)">How Cookies Work</h3>
+      <p class="small lh">The server sends a <code>Set-Cookie</code> header. The browser stores it locally and automatically sends it back on subsequent matching requests.</p>
+      <pre class="code-block">// Server response
+HTTP/1.1 200 OK
+Set-Cookie: sessionid=abc123; HttpOnly; Secure; SameSite=Lax
+
+// Next browser request (automatic)
+GET /dashboard HTTP/1.1
+Host: example.com
+Cookie: sessionid=abc123</pre>
+    </div>
+    <div class="panel">
+      <h3>Cookie Flags</h3>
+      <table>
+        <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>Secure</code></td><td class="small">Only sent over HTTPS</td></tr>
+          <tr><td><code>HttpOnly</code></td><td class="small">Not accessible via <code>document.cookie</code> (XSS protection)</td></tr>
+          <tr><td><code>SameSite=Lax</code></td><td class="small">Prevents CSRF — cookie only sent for same-site or top-level navigation</td></tr>
+          <tr><td><code>SameSite=Strict</code></td><td class="small">Never sent in cross-site requests</td></tr>
+          <tr><td><code>SameSite=None</code></td><td class="small">Sent everywhere (requires <code>Secure</code>)</td></tr>
+          <tr><td><code>Max-Age</code></td><td class="small">Lifetime in seconds</td></tr>
+          <tr><td><code>Domain</code></td><td class="small">Which domains receive the cookie</td></tr>
+          <tr><td><code>Path</code></td><td class="small">URL path scope for the cookie</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- CORS -->
+<section>
+  <h2>CORS — Cross-Origin Resource Sharing</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">What is CORS?</h3>
+      <p class="small lh">Browsers block JavaScript from making requests to a different origin (domain, protocol, or port) by default. <span class="bold">CORS headers</span> let servers opt in to cross-origin access.</p>
+      <div style="margin-top:12px;">
+        <h4>Preflight Flow (Non-Simple Requests)</h4>
+        <div class="small lh">
+          <p>1️⃣ Browser sends <code>OPTIONS</code> with <code>Origin</code>, <code>Access-Control-Request-Method</code></p>
+          <p>2️⃣ Server responds with allowed origins, methods, headers</p>
+          <p>3️⃣ If allowed, browser sends the actual request</p>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>CORS Headers</h3>
+      <table>
+        <thead><tr><th>Header</th><th>Direction</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>Origin</code></td><td><span class="teal">📨 Req</span></td><td class="small">Which website sent the request</td></tr>
+          <tr><td><code>Access-Control-Allow-Origin</code></td><td><span class="accent">📤 Res</span></td><td class="small">Which origin is allowed</td></tr>
+          <tr><td><code>Access-Control-Allow-Methods</code></td><td><span class="accent">📤 Res</span></td><td class="small">Allowed HTTP methods</td></tr>
+          <tr><td><code>Access-Control-Allow-Headers</code></td><td><span class="accent">📤 Res</span></td><td class="small">Allowed custom headers</td></tr>
+          <tr><td><code>Access-Control-Allow-Credentials</code></td><td><span class="accent">📤 Res</span></td><td class="small">Allow cookies/auth</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- AUTH METHODS -->
+<section>
+  <h2>Authentication Methods</h2>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>Method</th><th>Header</th><th>Description</th><th>Example</th><th>Typical Use</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="bold">Basic Auth</td>
+          <td><code>Authorization: Basic &lt;b64&gt;</code></td>
+          <td class="small">Username:password Base64-encoded</td>
+          <td class="small dim">Basic dXNlcjpzZWNyZXQ=</td>
+          <td class="small dim">Admin tools, test APIs</td>
+        </tr>
+        <tr>
+          <td class="bold">Bearer Token</td>
+          <td><code>Authorization: Bearer &lt;token&gt;</code></td>
+          <td class="small">Token-based auth (often JWT)</td>
+          <td class="small dim">Bearer eyJhbGci…</td>
+          <td class="small dim">OAuth2, modern APIs</td>
+        </tr>
+        <tr>
+          <td class="bold">API Key</td>
+          <td><code>x-api-key: &lt;key&gt;</code></td>
+          <td class="small">Fixed secret key for API access</td>
+          <td class="small dim">x-api-key: sk-12345</td>
+          <td class="small dim">Public APIs, microservices</td>
+        </tr>
+        <tr>
+          <td class="bold">Session Cookie</td>
+          <td><code>Cookie: sessionid=&lt;id&gt;</code></td>
+          <td class="small">Server-side session, ID in cookie</td>
+          <td class="small dim">Cookie: sessionid=abc</td>
+          <td class="small dim">Traditional web apps</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>JWT — JSON Web Token</h2>
+  <div class="g g-61">
+    <div class="panel panel-glow-accent">
+      <h3>Structure (Click each part)</h3>
+      <div style="font-family:var(--mono); font-size:0.85em; text-align:center; margin:14px 0; line-height:2;">
+        <span class="url-part" style="color:#f472b6; cursor:pointer;" onclick="showJwtPart('header')">eyJhbGciOiJIUzI1NiJ9</span><span class="dim">.</span><span class="url-part" style="color:#a78bfa; cursor:pointer;" onclick="showJwtPart('payload')">eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0</span><span class="dim">.</span><span class="url-part" style="color:#34d399; cursor:pointer;" onclick="showJwtPart('signature')">SflKxwRJSMeKKF2QT4fwpM</span>
+      </div>
+      <div id="jwtExplain" class="explain-box">
+        <span class="dim">← Click any colored part to decode it</span>
+      </div>
+    </div>
+    <div class="panel small lh">
+      <h3 style="color:var(--teal)">How JWT Works</h3>
+      <p>1. User logs in with credentials</p>
+      <p>2. Server creates a signed JWT and returns it</p>
+      <p>3. Client stores it (localStorage, cookie)</p>
+      <p>4. Client sends <code>Authorization: Bearer &lt;jwt&gt;</code> on each request</p>
+      <p>5. Server verifies signature — no session storage needed</p>
+      <p class="dim" style="margin-top:8px;">⚠️ JWT is <strong>not encrypted</strong> by default — anyone can decode the payload. Only the <strong>signature</strong> ensures integrity.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 09 — CACHING
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">09</div>
+    <h2>Caching</h2>
+    <p class="section-sub">ETags, Cache-Control, and conditional requests</p>
+  </div>
+</section>
+
+<section>
+  <h2>Cache-Control Directives</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <h3>Response Directives</h3>
+      <table>
+        <thead><tr><th>Directive</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>max-age=3600</code></td><td class="small">Cache is fresh for 3600 seconds</td></tr>
+          <tr><td><code>no-cache</code></td><td class="small">Must revalidate before using cache</td></tr>
+          <tr><td><code>no-store</code></td><td class="small">Never cache — sensitive data</td></tr>
+          <tr><td><code>public</code></td><td class="small">Can be cached by shared caches (CDNs)</td></tr>
+          <tr><td><code>private</code></td><td class="small">Only browser can cache (not CDN)</td></tr>
+          <tr><td><code>must-revalidate</code></td><td class="small">Once stale, must check with server</td></tr>
+          <tr><td><code>immutable</code></td><td class="small">Resource will never change</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Conditional Request Flow</h3>
+      <div class="small lh">
+        <p><span class="bold">First request:</span></p>
+        <pre class="code-block" style="font-size:0.9em;">GET /data → 200 OK
+ETag: "v42"
+Cache-Control: max-age=60</pre>
+        <p style="margin-top:10px;"><span class="bold">After cache expires:</span></p>
+        <pre class="code-block" style="font-size:0.9em;">GET /data
+If-None-Match: "v42"
+
+→ 304 Not Modified  (no body!)
+  or
+→ 200 OK + new body + new ETag</pre>
+        <p class="dim" style="margin-top:8px;">Saves bandwidth — only headers are transferred if resource hasn't changed.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>ETag &amp; If-None-Match — Interactive</h2>
+  <div class="g g-61">
+    <div class="panel">
+      <h3>Simulate Cache Validation</h3>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin:10px 0;">
+        <button class="btn btn-accent" id="etagFirst">1️⃣ GET /resource (first)</button>
+        <button class="btn btn-teal" id="etagSecond">2️⃣ GET with If-None-Match</button>
+        <button class="btn" id="etagChanged">3️⃣ Resource changed!</button>
+      </div>
+    </div>
+    <div>
+      <div id="etagResult" class="explain-box">
+        Press <strong>1️⃣</strong> to simulate the first request.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 10 — COMPRESSION
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">10</div>
+    <h2>Compression</h2>
+    <p class="section-sub">gzip, Brotli, deflate, and zstd — shrinking HTTP payloads</p>
+  </div>
+</section>
+
+<section>
+  <h2>Compression Algorithms</h2>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>Encoding</th><th>Description</th><th>Advantages</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>gzip</code></td>
+          <td>Deflate algorithm with header — years of standard use</td>
+          <td>Fast, universally supported</td>
+          <td><span class="chip chip-ok" style="font-size:0.8em;">Standard for HTTP/1.1</span></td>
+        </tr>
+        <tr>
+          <td><code>deflate</code></td>
+          <td>Raw Deflate without header</td>
+          <td>Small, simple</td>
+          <td><span class="chip chip-warn" style="font-size:0.8em;">Rare — inconsistent implementations</span></td>
+        </tr>
+        <tr>
+          <td><code>br</code> (Brotli)</td>
+          <td>Modern algorithm by Google</td>
+          <td>Better compression ratio</td>
+          <td><span class="chip chip-ok" style="font-size:0.8em;">Standard for HTTPS</span></td>
+        </tr>
+        <tr>
+          <td><code>zstd</code></td>
+          <td>Zstandard by Facebook</td>
+          <td>Very fast, excellent ratio</td>
+          <td><span class="chip chip-info" style="font-size:0.8em;">Experimental — growing adoption</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="g g2" style="margin-top:14px;">
+    <div class="panel panel-glow-teal small lh">
+      <h3 style="color:var(--teal)">How It Works</h3>
+      <pre class="code-block" style="font-size:0.95em;">// Request
+Accept-Encoding: gzip, br
+
+// Response
+Content-Encoding: br
+Content-Length: 1204  ← compressed size</pre>
+    </div>
+    <div class="panel panel-glow-accent small lh">
+      <h3>Compression Estimator</h3>
+      <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;">
+        <label class="field">Payload (bytes)<input id="cmpSize" type="number" value="5000" style="width:90px;"></label>
+        <label class="field">Algorithm<select id="cmpAlgo"><option>gzip</option><option>deflate</option><option>brotli</option><option>zstd</option></select></label>
+        <button class="btn btn-accent" id="cmpRun">Estimate</button>
+      </div>
+      <div id="cmpResult" class="explain-box" style="margin-top:8px;min-height:40px;"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 11 — PROTOCOL EVOLUTION
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">11</div>
+    <h2>Protocol Evolution</h2>
+    <p class="section-sub">HTTP/1.0 → HTTP/1.1 → HTTP/2 → HTTP/3</p>
+  </div>
+</section>
+
+<section>
+  <h2>HTTP Versions Overview</h2>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>Feature</th><th>HTTP/1.0</th><th>HTTP/1.1</th><th>HTTP/2</th><th>HTTP/3</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="bold">Text-based</td><td class="green">✅</td><td class="green">✅</td><td class="rose">❌ Binary</td><td class="rose">❌ Binary</td></tr>
+        <tr><td class="bold">Multiplexing</td><td class="rose">❌</td><td class="rose">❌</td><td class="green">✅</td><td class="green">✅</td></tr>
+        <tr><td class="bold">Header Compression</td><td class="rose">❌</td><td class="rose">❌</td><td class="green">✅ HPACK</td><td class="green">✅ QPACK</td></tr>
+        <tr><td class="bold">Persistent Connection</td><td class="rose">❌</td><td class="green">✅</td><td class="green">✅</td><td class="green">✅</td></tr>
+        <tr><td class="bold">Server Push</td><td class="rose">❌</td><td class="rose">❌</td><td class="green">✅</td><td class="rose">❌ Removed</td></tr>
+        <tr><td class="bold">Transport</td><td>TCP</td><td>TCP</td><td>TCP</td><td><span class="accent bold">QUIC (UDP)</span></td></tr>
+        <tr><td class="bold">HOL Blocking</td><td>Per-request</td><td>Per-request</td><td>TCP-level</td><td><span class="green bold">Stream-level only</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>HTTP/2 Unwrapped</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <h3>Key Improvements</h3>
+      <table>
+        <thead><tr><th>Feature</th><th>HTTP/1.1</th><th>HTTP/2</th></tr></thead>
+        <tbody>
+          <tr><td>Connections</td><td class="small dim">Multiple parallel</td><td class="small green">Single (multiplexed)</td></tr>
+          <tr><td>Headers</td><td class="small dim">Repeated, uncompressed</td><td class="small green">HPACK compression</td></tr>
+          <tr><td>Parsing</td><td class="small dim">Text-based</td><td class="small green">Binary frames</td></tr>
+          <tr><td>Priority</td><td class="small rose">❌ None</td><td class="small green">✅ Stream priority</td></tr>
+          <tr><td>Server Push</td><td class="small rose">❌ No</td><td class="small green">✅ Yes</td></tr>
+          <tr><td>Latency</td><td class="small dim">Higher (round-trips)</td><td class="small green">Lower</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Binary Framing Layer</h3>
+      <p class="small lh">HTTP/2 splits communication into <span class="bold">frames</span> that are multiplexed over a single TCP connection.</p>
+      <div class="diagram-row" style="margin:14px 0;">
+        <div class="diagram-box" style="border-color:var(--accent); font-size:0.65em;">HEADERS<br>Frame</div>
+        <div class="diagram-box" style="border-color:var(--teal); font-size:0.65em;">DATA<br>Frame</div>
+        <div class="diagram-box" style="border-color:var(--green); font-size:0.65em;">SETTINGS<br>Frame</div>
+        <div class="diagram-box" style="border-color:var(--purple); font-size:0.65em;">PUSH_PROMISE<br>Frame</div>
+      </div>
+      <p class="tiny dim">Each frame has a type, length, flags, and stream identifier. Multiple streams share one connection.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>HTTP/2 Binary Header Example</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <h3>Decoded Pseudo-Headers</h3>
+      <pre class="code-block">:method: GET
+:scheme: http
+:authority: localhost:8080
+:path: /
+user-agent: curl/8.6.0</pre>
+      <p class="tiny dim" style="margin-top:8px;">HTTP/2 uses <strong>pseudo-headers</strong> (prefixed with <code>:</code>) instead of a request line.</p>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Wire Format (HPACK-encoded)</h3>
+      <pre class="code-block" style="font-size:0.8em;">0x82        ; :method: GET  (Index 2)
+0x87        ; :scheme: http (Index 7)
+0x41 0x8a   ; Literal with Indexing
+  63 6f 6f 6b 69 65     ; "cookie"
+  73 65 73 73 69 6f 6e  ; "session"
+  =abcdef               ; value</pre>
+      <p class="tiny dim" style="margin-top:8px;">Headers are compressed using HPACK — a combination of static/dynamic tables and Huffman coding.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 12 — HPACK & HUFFMAN
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">12</div>
+    <h2>HPACK &amp; Huffman</h2>
+    <p class="section-sub">Header compression in HTTP/2 — how it really works</p>
+  </div>
+</section>
+
+<section>
+  <h2>HPACK — Header Compression</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <h3>Three Compression Techniques</h3>
+      <div class="small lh">
+        <p><span class="accent bold">1. Static Table</span> — 61 pre-defined common headers (e.g., <code>:method: GET</code> = index 2). Referenced by index number.</p>
+        <p><span class="accent bold">2. Dynamic Table</span> — Connection-specific table that grows as new headers are seen. Both sides maintain identical copies.</p>
+        <p><span class="accent bold">3. Huffman Coding</span> — Compresses header string values using frequency-based variable-length encoding.</p>
+      </div>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Why It Matters</h3>
+      <p class="small lh">HTTP/1.1 sends headers as <strong>plain text on every request</strong> — often 500+ bytes of repetitive data.</p>
+      <p class="small lh">With HPACK, common headers like <code>:method: GET</code> compress to <strong>a single byte</strong> (index reference).</p>
+      <div style="margin-top:12px;">
+        <p class="small"><span class="accent bold">Typical savings:</span></p>
+        <p class="small">First request: ~30% smaller headers</p>
+        <p class="small">Subsequent requests: <span class="green bold">~85% smaller</span> (dynamic table hits)</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Huffman Coding — Interactive Example</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-purple">
+      <h3 style="color:var(--purple)">The Concept</h3>
+      <p class="small lh">Frequent characters get <strong>short</strong> codes, rare characters get <strong>long</strong> codes. This is optimal prefix-free encoding.</p>
+      <table style="margin-top:10px;">
+        <thead><tr><th>Character</th><th>Frequency</th><th>Huffman Code</th></tr></thead>
+        <tbody>
+          <tr><td class="bold">A</td><td>very high</td><td class="green mono bold">0</td></tr>
+          <tr><td class="bold">B</td><td>high</td><td class="teal mono bold">10</td></tr>
+          <tr><td class="bold">C</td><td>low</td><td class="accent mono bold">110</td></tr>
+          <tr><td class="bold">D</td><td>very low</td><td class="rose mono bold">111</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel panel-glow-accent">
+      <h3>Encoding Example</h3>
+      <p class="small">Input string: <span class="mono bold">A A A B C A D</span></p>
+      <p class="small">Encoded: <span class="mono green">0</span> <span class="mono green">0</span> <span class="mono green">0</span> <span class="mono teal">10</span> <span class="mono accent">110</span> <span class="mono green">0</span> <span class="mono rose">111</span></p>
+      <p class="small mono" style="margin-top:6px;">= 0001011001111</p>
+      <div class="panel" style="margin-top:14px; background:rgba(34,197,94,0.08); border-color:rgba(34,197,94,0.3);">
+        <p class="small">🧠 <span class="bold">Without Huffman:</span> 7 chars × 8 bits = <span class="rose bold">56 bits</span></p>
+        <p class="small">🧠 <span class="bold">With Huffman:</span> <span class="green bold">13 bits</span> — that's a 77% reduction!</p>
+      </div>
+      <p class="tiny dim" style="margin-top:10px;">⚠️ HPACK uses a fixed Huffman table (RFC 7541, Appendix B) — not dynamically built per connection. The table is optimized for typical HTTP header values.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     HTTP/3 & QUIC
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>HTTP/3 &amp; QUIC</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-rose">
+      <h3 style="color:var(--rose)">Why HTTP/3?</h3>
+      <p class="small lh">HTTP/2's biggest problem: <span class="bold">TCP head-of-line blocking</span>. If one packet is lost, ALL streams on that TCP connection stall.</p>
+      <p class="small lh" style="margin-top:8px;">HTTP/3 moves to <span class="accent bold">QUIC</span> (built on UDP), where each stream is independently loss-recovered.</p>
+      <div class="diagram-row" style="margin:14px 0;">
+        <div class="diagram-box" style="border-color:var(--teal);">HTTP/3</div>
+        <div class="diagram-arrow">↕</div>
+        <div class="diagram-box" style="border-color:var(--accent);">QUIC</div>
+        <div class="diagram-arrow">↕</div>
+        <div class="diagram-box" style="border-color:var(--green);">UDP</div>
+      </div>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Key Benefits</h3>
+      <div class="small lh">
+        <p>🚀 <strong>0-RTT connection setup</strong> — resuming previous connections needs zero round-trips</p>
+        <p>📦 <strong>Independent streams</strong> — packet loss on one stream doesn't block others</p>
+        <p>🔒 <strong>Built-in TLS 1.3</strong> — encryption is mandatory and integrated</p>
+        <p>🔄 <strong>Connection migration</strong> — connections survive IP changes (WiFi → cellular)</p>
+        <p>📊 <strong>QPACK</strong> header compression (evolved from HPACK)</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>HTTP Upgrade — Protocol Negotiation</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <h3>ALPN (TLS-based, HTTP/2)</h3>
+      <p class="small lh">Part of the TLS handshake. Client and server negotiate the application protocol.</p>
+      <pre class="code-block">ClientHello:
+  ALPN extension: h2, http/1.1
+
+ServerHello:
+  ALPN extension: h2
+
+→ HTTP/2 connection established!</pre>
+      <p class="tiny dim" style="margin-top:6px;">ALPN = Application-Layer Protocol Negotiation (RFC 7301)</p>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Upgrade Header (h2c, cleartext)</h3>
+      <p class="small lh">For unencrypted HTTP/2, the client can request an upgrade via HTTP/1.1:</p>
+      <pre class="code-block">GET / HTTP/1.1
+Host: example.com
+Upgrade: h2c
+HTTP2-Settings: &lt;base64&gt;
+Connection: Upgrade, HTTP2-Settings</pre>
+      <p class="tiny dim" style="margin-top:6px;">h2c = HTTP/2 cleartext. Rarely used in production — most HTTP/2 uses TLS.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 13 — TLS/SSL
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">13</div>
+    <h2>TLS / SSL</h2>
+    <p class="section-sub">HTTP with encryption — the magic behind HTTPS</p>
+  </div>
+</section>
+
+<section>
+  <h2>TLS Versions Overview</h2>
+  <div class="panel">
+    <table>
+      <thead>
+        <tr><th>Version</th><th>Year</th><th>Status</th><th>Secure?</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="bold">TLS 1.0</td><td>1999</td>
+          <td><span class="chip chip-err" style="font-size:0.8em;">🚫 Deprecated</span></td>
+          <td class="rose">❌ No</td>
+          <td class="small dim">Based on SSL 3.0, no modern ciphers. Disabled since 2020.</td>
+        </tr>
+        <tr>
+          <td class="bold">TLS 1.1</td><td>2006</td>
+          <td><span class="chip chip-err" style="font-size:0.8em;">🚫 Deprecated</span></td>
+          <td class="rose">❌ No</td>
+          <td class="small dim">No AEAD support, vulnerable to attacks. Disabled since 2020.</td>
+        </tr>
+        <tr>
+          <td class="bold">TLS 1.2</td><td>2008</td>
+          <td><span class="chip chip-ok" style="font-size:0.8em;">✅ Current</span></td>
+          <td class="green">✅ Yes</td>
+          <td class="small dim">Widely used. Supports AES-GCM, SHA-256. Flexible cipher suites.</td>
+        </tr>
+        <tr>
+          <td class="bold">TLS 1.3</td><td>2018</td>
+          <td><span class="chip chip-ok" style="font-size:0.8em;">✅ Latest</span></td>
+          <td class="green">✅✅</td>
+          <td class="small dim">Faster handshake (1-RTT), forward secrecy mandatory, only secure ciphers.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>TLS Handshake — Click Each Step</h2>
+  <div class="g g-14">
+    <div class="panel" style="min-width:120px;">
+      <h3>Steps</h3>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        <button class="btn btn-teal" style="font-size:0.7em;width:100%;" onclick="showTlsStep(0)">1. ClientHello</button>
+        <button class="btn btn-accent" style="font-size:0.7em;width:100%;" onclick="showTlsStep(1)">2. ServerHello</button>
+        <button class="btn btn-accent" style="font-size:0.7em;width:100%;" onclick="showTlsStep(2)">3. Certificate</button>
+        <button class="btn btn-accent" style="font-size:0.7em;width:100%;" onclick="showTlsStep(3)">4. Key Exchange</button>
+        <button class="btn btn-teal" style="font-size:0.7em;width:100%;" onclick="showTlsStep(4)">5. Finished</button>
+        <button class="btn" style="font-size:0.7em;width:100%;" onclick="showTlsStep(5)">6. Application Data</button>
+      </div>
+    </div>
+    <div>
+      <div id="tlsExplain" class="explain-box" style="min-height:120px;">
+        <span class="dim">← Click a step to see what happens</span>
+      </div>
+      <div class="panel small" style="margin-top:10px;">
+        <h4>TLS 1.3 vs TLS 1.2</h4>
+        <p class="dim lh">TLS 1.3 reduces the handshake from <span class="rose">2 round-trips</span> to <span class="green bold">1 round-trip</span> (1-RTT). With session resumption, it can even do <span class="green bold">0-RTT</span>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SECTION 14 — ADVANCED PATTERNS
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">14</div>
+    <h2>Advanced Patterns</h2>
+    <p class="section-sub">Range requests, chunked transfer, WebSockets, proxies, SSE &amp; security headers</p>
+  </div>
+</section>
+
+<section>
+  <h2>Range Requests</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <h3>How Range Requests Work</h3>
+      <p class="small lh">Clients can request specific byte ranges of a resource. Used for <strong>resumable downloads</strong> and <strong>video seeking</strong>.</p>
+      <pre class="code-block">// Request
+GET /video.mp4 HTTP/1.1
+Range: bytes=1000-1999
+
+// Response
+HTTP/1.1 206 Partial Content
+Content-Range: bytes 1000-1999/50000
+Content-Length: 1000
+
+(1000 bytes of data)</pre>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Range Simulator</h3>
+      <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;">
+        <label class="field">Total bytes<input id="rangeTotal" type="number" value="10240" style="width:80px;"></label>
+        <label class="field">Range<input id="rangeHeader" value="bytes=0-1023" style="width:130px;"></label>
+        <button class="btn btn-teal" id="rangeRun">Evaluate</button>
+      </div>
+      <div id="rangeResult" class="explain-box" style="margin-top:8px;min-height:50px;"></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Chunked Transfer Encoding</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-purple">
+      <h3 style="color:var(--purple)">What Is It?</h3>
+      <p class="small lh">When the server doesn't know the total content length upfront, it can stream data in <strong>chunks</strong>. Each chunk is prefixed by its size in hex.</p>
+      <pre class="code-block">HTTP/1.1 200 OK
+Transfer-Encoding: chunked
+
+1a\r\n
+This is the first chunk.\r\n
+10\r\n
+Second chunk!!\r\n
+0\r\n
+\r\n  ← End of message</pre>
+    </div>
+    <div class="panel panel-glow-accent">
+      <h3>Chunk Simulator</h3>
+      <label class="field" style="margin-bottom:6px;">Text to chunk
+        <textarea id="chunkText" style="min-height:50px;">Chunked transfer lets a server stream data when the total length is unknown.</textarea>
+      </label>
+      <div style="display:flex;gap:8px;align-items:end;">
+        <label class="field">Chunk size<input id="chunkSize" type="number" min="4" max="64" value="20" style="width:70px;"></label>
+        <button class="btn btn-accent" id="chunkRun">Generate</button>
+      </div>
+      <pre class="code-block" id="chunkResult" style="margin-top:8px;max-height:200px;font-size:0.8em;"></pre>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>WebSockets</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Upgrading from HTTP</h3>
+      <p class="small lh">WebSockets start as an HTTP request with an <code>Upgrade</code> header. Once upgraded, the connection becomes full-duplex bidirectional.</p>
+      <pre class="code-block">// Client request
+GET /chat HTTP/1.1
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==
+Sec-WebSocket-Version: 13
+
+// Server response
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: HSmrc0sMlYUkAGmm5OPpG2HaGWk=</pre>
+    </div>
+    <div class="panel panel-glow-accent">
+      <h3>WebSocket vs HTTP</h3>
+      <table>
+        <thead><tr><th></th><th>HTTP</th><th>WebSocket</th></tr></thead>
+        <tbody>
+          <tr><td class="bold">Direction</td><td>Request → Response</td><td class="green">Bidirectional</td></tr>
+          <tr><td class="bold">Connection</td><td>Short-lived (per request)</td><td class="green">Persistent</td></tr>
+          <tr><td class="bold">Overhead</td><td>Headers on every request</td><td class="green">Minimal framing</td></tr>
+          <tr><td class="bold">Use cases</td><td class="dim">REST APIs, web pages</td><td class="dim">Chat, live updates, gaming</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Security Headers</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-rose">
+      <h3 style="color:var(--rose)">Essential Security Headers</h3>
+      <table>
+        <thead><tr><th>Header</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>Strict-Transport-Security</code></td><td class="small">Force HTTPS for all future requests (HSTS)</td></tr>
+          <tr><td><code>Content-Security-Policy</code></td><td class="small">Control which resources the browser can load (XSS protection)</td></tr>
+          <tr><td><code>X-Frame-Options</code></td><td class="small">Prevent clickjacking by blocking iframe embedding</td></tr>
+          <tr><td><code>X-Content-Type-Options</code></td><td class="small">Prevent MIME type sniffing (<code>nosniff</code>)</td></tr>
+          <tr><td><code>Referrer-Policy</code></td><td class="small">Control how much referrer info is shared</td></tr>
+          <tr><td><code>Permissions-Policy</code></td><td class="small">Restrict browser features (camera, mic, geolocation)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel panel-glow-green">
+      <h3 style="color:var(--green)">Example: Secure Response</h3>
+      <pre class="code-block">HTTP/1.1 200 OK
+Strict-Transport-Security:
+  max-age=31536000; includeSubDomains
+Content-Security-Policy:
+  default-src 'self';
+  script-src 'self' cdn.example.com
+X-Frame-Options: DENY
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin
+Permissions-Policy:
+  camera=(), microphone=()</pre>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Proxies &amp; Reverse Proxies</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-accent">
+      <h3>Forward Proxy (Client-side)</h3>
+      <p class="small lh">Sits between <strong>client</strong> and internet. The client connects to the proxy, which makes requests on its behalf.</p>
+      <div class="diagram-row" style="margin:12px 0;">
+        <div class="diagram-box" style="border-color:var(--teal); font-size:0.65em;">Client</div>
+        <div class="diagram-arrow">→</div>
+        <div class="diagram-box" style="border-color:var(--accent); font-size:0.65em;">Forward<br>Proxy</div>
+        <div class="diagram-arrow">→</div>
+        <div class="diagram-box" style="border-color:var(--green); font-size:0.65em;">Server</div>
+      </div>
+      <p class="tiny dim">Use cases: corporate firewalls, caching, anonymization, content filtering.</p>
+    </div>
+    <div class="panel panel-glow-teal">
+      <h3 style="color:var(--teal)">Reverse Proxy (Server-side)</h3>
+      <p class="small lh">Sits in front of <strong>servers</strong>. Clients think they talk to the server, but a proxy routes and balances traffic.</p>
+      <div class="diagram-row" style="margin:12px 0;">
+        <div class="diagram-box" style="border-color:var(--teal); font-size:0.65em;">Client</div>
+        <div class="diagram-arrow">→</div>
+        <div class="diagram-box" style="border-color:var(--accent); font-size:0.65em;">Reverse<br>Proxy</div>
+        <div class="diagram-arrow">→</div>
+        <div class="diagram-box" style="border-color:var(--green); font-size:0.6em;">Server A<br>Server B<br>Server C</div>
+      </div>
+      <p class="tiny dim">Use cases: load balancing, SSL termination, caching, DDoS protection. (nginx, HAProxy, Cloudflare)</p>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:14px;">
+    <h3>Proxy-Related Headers</h3>
+    <table>
+      <thead><tr><th>Header</th><th>Purpose</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><code>X-Forwarded-For</code></td><td class="small">Original client IP (chain of proxies)</td><td class="dim mono" style="font-size:0.65em;">203.0.113.50, 70.41.3.18</td></tr>
+        <tr><td><code>X-Forwarded-Proto</code></td><td class="small">Original protocol (http or https)</td><td class="dim mono" style="font-size:0.65em;">https</td></tr>
+        <tr><td><code>X-Real-IP</code></td><td class="small">Single real client IP (nginx)</td><td class="dim mono" style="font-size:0.65em;">203.0.113.50</td></tr>
+        <tr><td><code>Via</code></td><td class="small">Intermediate proxies in the chain</td><td class="dim mono" style="font-size:0.65em;">1.1 proxy.example.com</td></tr>
+        <tr><td><code>Forwarded</code></td><td class="small">Standardized <span class="tag tag-green" style="font-size:0.7em;">RFC 7239</span></td><td class="dim mono" style="font-size:0.65em;">for=203.0.113.50;proto=https</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Server-Sent Events (SSE)</h2>
+  <div class="g g2">
+    <div class="panel panel-glow-purple">
+      <h3 style="color:var(--purple)">How SSE Works</h3>
+      <p class="small lh">A long-lived HTTP connection where the server <strong>pushes</strong> events to the client. Uses standard HTTP — no protocol upgrade needed.</p>
+      <pre class="code-block" style="font-size:0.72em;">GET /events HTTP/1.1
+Accept: text/event-stream
+
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+
+data: {"user":"Ada","action":"login"}
+
+event: notification
+data: {"msg":"New message from Alan"}
+
+id: 42
+data: {"heartbeat":true}</pre>
+    </div>
+    <div class="panel panel-glow-accent">
+      <h3>SSE vs WebSocket vs Long Polling</h3>
+      <table>
+        <thead><tr><th></th><th>SSE</th><th>WebSocket</th><th>Long Polling</th></tr></thead>
+        <tbody>
+          <tr><td class="bold">Direction</td><td class="green">Server → Client</td><td class="green">Bidirectional</td><td class="dim">Server → Client</td></tr>
+          <tr><td class="bold">Protocol</td><td>HTTP</td><td>WS (upgrade)</td><td>HTTP</td></tr>
+          <tr><td class="bold">Reconnect</td><td class="green">Built-in</td><td class="dim">Manual</td><td class="dim">Manual</td></tr>
+          <tr><td class="bold">Binary data</td><td class="rose">❌ Text only</td><td class="green">✅ Yes</td><td class="dim">Yes (base64)</td></tr>
+          <tr><td class="bold">Complexity</td><td class="green">Low</td><td class="dim">Medium</td><td class="accent">High</td></tr>
+          <tr><td class="bold">Use case</td><td class="dim small">Feeds, notifications, dashboards</td><td class="dim small">Chat, gaming, collaboration</td><td class="dim small">Legacy fallback</td></tr>
+        </tbody>
+      </table>
+      <p class="tiny dim" style="margin-top:8px;">SSE is often the simplest choice for one-way server push. Browser API: <code>new EventSource('/events')</code></p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     QUIZZES
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <div class="section-num">🧠</div>
+    <h2>Knowledge Check</h2>
+    <p class="section-sub">Test your understanding with interactive quizzes</p>
+  </div>
+</section>
+
+<section>
+  <h2>Quiz 1 — Status Codes</h2>
+  <div class="g g2">
+    <div class="panel" id="quiz1">
+      <p class="small bold">Which status code means "resource has not changed, use your cache"?</p>
+      <button class="quiz-btn" onclick="checkQuiz('quiz1',this,false)">200 OK</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz1',this,true)">304 Not Modified</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz1',this,false)">204 No Content</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz1',this,false)">301 Moved Permanently</button>
+      <div id="quiz1Result" class="explain-box" style="min-height:40px;"><span class="dim">Select an answer</span></div>
+    </div>
+    <div class="panel" id="quiz2">
+      <p class="small bold">Which HTTP method is NOT idempotent?</p>
+      <button class="quiz-btn" onclick="checkQuiz('quiz2',this,false)">GET</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz2',this,false)">PUT</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz2',this,true)">POST</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz2',this,false)">DELETE</button>
+      <div id="quiz2Result" class="explain-box" style="min-height:40px;"><span class="dim">Select an answer</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Quiz 2 — Headers &amp; Security</h2>
+  <div class="g g2">
+    <div class="panel" id="quiz3">
+      <p class="small bold">Which header prevents a page from being embedded in an iframe?</p>
+      <button class="quiz-btn" onclick="checkQuiz('quiz3',this,false)">Content-Security-Policy</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz3',this,true)">X-Frame-Options</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz3',this,false)">Strict-Transport-Security</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz3',this,false)">Access-Control-Allow-Origin</button>
+      <div id="quiz3Result" class="explain-box" style="min-height:40px;"><span class="dim">Select an answer</span></div>
+    </div>
+    <div class="panel" id="quiz4">
+      <p class="small bold">What does HPACK use to compress HTTP/2 headers?</p>
+      <button class="quiz-btn" onclick="checkQuiz('quiz4',this,false)">gzip compression</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz4',this,false)">Base64 encoding</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz4',this,true)">Static/dynamic tables + Huffman coding</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz4',this,false)">Brotli compression</button>
+      <div id="quiz4Result" class="explain-box" style="min-height:40px;"><span class="dim">Select an answer</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Quiz 3 — Protocol &amp; Transport</h2>
+  <div class="g g2">
+    <div class="panel" id="quiz5">
+      <p class="small bold">What transport protocol does HTTP/3 use?</p>
+      <button class="quiz-btn" onclick="checkQuiz('quiz5',this,false)">TCP</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz5',this,true)">QUIC (over UDP)</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz5',this,false)">SCTP</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz5',this,false)">WebSocket</button>
+      <div id="quiz5Result" class="explain-box" style="min-height:40px;"><span class="dim">Select an answer</span></div>
+    </div>
+    <div class="panel" id="quiz6">
+      <p class="small bold">The Cookie <code>HttpOnly</code> flag prevents…</p>
+      <button class="quiz-btn" onclick="checkQuiz('quiz6',this,false)">The cookie from being sent over HTTPS</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz6',this,true)">JavaScript access via document.cookie</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz6',this,false)">The cookie from being sent cross-site</button>
+      <button class="quiz-btn" onclick="checkQuiz('quiz6',this,false)">The server from reading the cookie</button>
+      <div id="quiz6Result" class="explain-box" style="min-height:40px;"><span class="dim">Select an answer</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     END SLIDE
+     ═══════════════════════════════════════════════════════════════════════ -->
+<section>
+  <div class="section-title">
+    <h1 style="font-size:2.4em; margin-bottom:0.2em;">🎓 Recap</h1>
+    <div class="g g3" style="margin-top:20px; max-width:800px;">
+      <div class="panel panel-glow-accent center small">
+        <p class="accent bold">Foundations</p>
+        <p class="dim">URL anatomy, DNS, TCP, TLS, HTTP messages, methods, headers, status codes, content negotiation</p>
+      </div>
+      <div class="panel panel-glow-teal center small">
+        <p class="teal bold">Browser Layer</p>
+        <p class="dim">Cookies, CORS, authentication, caching, compression, redirects, rate limiting</p>
+      </div>
+      <div class="panel panel-glow-purple center small">
+        <p class="purple bold">Advanced</p>
+        <p class="dim">HTTP/2, HPACK, Huffman, HTTP/3, QUIC, TLS, WebSockets, SSE, proxies, security headers</p>
+      </div>
+    </div>
+    <p class="dim" style="margin-top:24px; font-size:0.75em;">No npm · No build step · Just open and teach HTTP with confidence.</p>
+    <p class="dim tiny" style="margin-top:8px;">HTTP Accelerator — Moritz Megerle 2025</p>
+  </div>
+</section>
+
+</div><!-- /slides -->
+</div><!-- /reveal -->
+
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5/dist/reveal.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5/plugin/highlight/highlight.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reveal.js@5/plugin/notes/notes.js"></script>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   REVEAL INIT
+   ═══════════════════════════════════════════════════════════════════════ */
+Reveal.initialize({
+  hash: true,
+  controls: true,
+  progress: true,
+  center: true,
+  transition: 'slide',
+  backgroundTransition: 'fade',
+  width: 1280,
+  height: 720,
+  margin: 0.06,
+  minScale: 0.5,
+  maxScale: 1.6,
+  plugins: [RevealHighlight, RevealNotes]
+});
+
+/* ═══════════════════════════════════════════════════════════════════════
+   URL ANATOMY INTERACTIVE
+   ═══════════════════════════════════════════════════════════════════════ */
+const urlExplanations = {
+  scheme: {
+    title: 'Scheme (Protocol)',
+    color: '#f472b6',
+    text: 'The scheme identifies the protocol to use. Common schemes:\n\n• https — HTTP over TLS (encrypted, port 443)\n• http — plain HTTP (unencrypted, port 80)\n• ftp — File Transfer Protocol\n• ws/wss — WebSocket / WebSocket Secure\n\nThe scheme determines HOW to communicate with the server.'
+  },
+  userinfo: {
+    title: 'Userinfo (Credentials)',
+    color: '#c084fc',
+    text: 'Optional authentication embedded in the URL.\nFormat: username:password\n\n⚠️ Deprecated in modern browsers for security reasons — credentials in URLs are visible in logs, bookmarks, and Referer headers.\n\nUse Authorization headers instead.'
+  },
+  host: {
+    title: 'Host (Domain Name)',
+    color: '#60a5fa',
+    text: 'The domain name or IP address of the server.\n\n• Resolved to an IP via DNS\n• Can be a subdomain (api.example.com)\n• Sent as the Host header in HTTP/1.1\n• Becomes :authority pseudo-header in HTTP/2\n\nThis is the MANDATORY part of every URL.'
+  },
+  port: {
+    title: 'Port Number',
+    color: '#34d399',
+    text: 'The TCP port on the server to connect to.\n\nDefault ports (omitted when using defaults):\n• HTTP → 80\n• HTTPS → 443\n\nCustom ports are common in development (3000, 8080, 8443).\nThe port is part of the "origin" for same-origin policy.'
+  },
+  path: {
+    title: 'Path (Resource Location)',
+    color: '#fbbf24',
+    text: 'Identifies the specific resource on the server.\n\n• Hierarchical, separated by /\n• /v2/users/42 → API version 2, users collection, user ID 42\n• Case-sensitive on most servers\n• URL-encoded for special characters (%20 = space)\n\nThis is what the server uses to route the request.'
+  },
+  query: {
+    title: 'Query String (Parameters)',
+    color: '#f87171',
+    text: 'Key-value pairs providing additional parameters.\n\n• Starts after the ? character\n• Pairs separated by &\n• fields=name,email — request specific fields\n• lang=en — set language preference\n\nQuery parameters do NOT change the resource — they modify how it\'s returned. Often used for filtering, sorting, pagination.'
+  },
+  fragment: {
+    title: 'Fragment (Hash)',
+    color: '#a78bfa',
+    text: 'Client-side reference to a section within the resource.\n\n• NEVER sent to the server\n• Used by the browser to scroll to an element\n• #section-3 → scroll to id="section-3"\n\nSingle-page apps use fragments for client-side routing.\nAlso called "hash" or "anchor".'
+  }
+};
+
+function explainUrl(el) {
+  document.querySelectorAll('.url-part').forEach(p => p.classList.remove('selected'));
+  el.classList.add('selected');
+  const info = urlExplanations[el.dataset.part];
+  if (!info) return;
+  const box = document.getElementById('urlExplain');
+  box.innerHTML = '<h4 style="color:' + info.color + '; margin:0 0 6px;">' + info.title + '</h4><pre style="white-space:pre-wrap; font-family:var(--sans); font-size:0.9em; color:var(--text); background:none; border:none; padding:0; margin:0; line-height:1.6;">' + info.text + '</pre>';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   HTTP MESSAGE INTERACTIVE
+   ═══════════════════════════════════════════════════════════════════════ */
+const msgExplanations = {
+  req: {
+    'request-line': { title: 'Request Line', text: 'The first line of every HTTP request. Contains three parts:\n\n• METHOD — what action to perform (POST)\n• REQUEST-TARGET — the path + query (/api/users?role=admin)\n• HTTP-VERSION — protocol version (HTTP/1.1)\n\nThis is the most important line — it tells the server what you want to do and where.' },
+    'host': { title: 'Host Header', text: 'MANDATORY in HTTP/1.1. Tells the server which website you\'re requesting.\n\nThis is crucial because multiple websites can share the same IP address (virtual hosting). Without Host, the server wouldn\'t know which site to serve.' },
+    'content-type': { title: 'Content-Type Header', text: 'Tells the server the format of the request body.\n\n• application/json — JSON data (most common in APIs)\n• application/x-www-form-urlencoded — HTML form data\n• multipart/form-data — file uploads\n• text/plain — plain text\n\nThe server uses this to know how to parse the body.' },
+    'content-length': { title: 'Content-Length Header', text: 'The size of the request body in bytes.\n\nThe server needs this to know when the body ends. Without it (and without chunked encoding), the server can\'t reliably read the body.\n\n47 bytes = the JSON body below.' },
+    'authorization': { title: 'Authorization Header', text: 'Carries authentication credentials.\n\n• Bearer <token> — most common (JWT, OAuth2)\n• Basic <base64> — username:password encoded\n\nThe server validates this token to identify and authorize the user. Without valid auth, expect 401 Unauthorized.' },
+    'accept': { title: 'Accept Header', text: 'Content negotiation — tells the server what response formats the client understands.\n\n• application/json — prefers JSON\n• text/html — prefers HTML\n• */* — accepts anything\n\nThe server should respond with a matching Content-Type.' },
+    'blank-line': { title: 'Blank Line (CRLF)', text: 'The empty line (\\r\\n) is the SEPARATOR between headers and body.\n\nThis is how HTTP knows where headers end and the body begins. It\'s a critical part of the protocol format.\n\nNo blank line = malformed request.' },
+    'body': { title: 'Request Body (Payload)', text: 'The actual data being sent to the server.\n\nHere it\'s JSON with user data. The body format is indicated by Content-Type, and its size by Content-Length.\n\n• GET and HEAD requests typically have NO body\n• POST, PUT, PATCH usually carry a body\n• DELETE may or may not have a body' }
+  },
+  res: {
+    'status-line': { title: 'Status Line', text: 'The first line of every HTTP response. Contains:\n\n• HTTP-VERSION — protocol version\n• STATUS-CODE — 3-digit number (201)\n• REASON-PHRASE — human-readable explanation (Created)\n\n201 Created means the server successfully created a new resource.' },
+    'res-content-type': { title: 'Content-Type', text: 'Tells the client what format the response body is in.\n\napplication/json; charset=utf-8\n• application/json — the data is JSON\n• charset=utf-8 — the text encoding is UTF-8\n\nThe client uses this to parse the body correctly.' },
+    'res-content-length': { title: 'Content-Length', text: 'Size of the response body in bytes.\n\n83 bytes = the JSON object below. The client uses this to know when it has received the complete response.' },
+    'res-location': { title: 'Location Header', text: 'Points to the URL of the newly created resource.\n\n/api/users/1337 — the new user\'s endpoint.\n\nCommon with 201 Created and 3xx redirects. The client can follow this URL to access the new resource.' },
+    'res-date': { title: 'Date Header', text: 'The exact timestamp when the server generated this response.\n\nAlways in HTTP-date format (RFC 7231):\nDay, DD Mon YYYY HH:MM:SS GMT\n\nUsed for caching calculations and debugging.' },
+    'res-cache': { title: 'Cache-Control', text: 'Instructions for caching this response.\n\nno-cache — the response CAN be cached, but must be revalidated with the server before each use.\n\nOther values: max-age=3600, no-store, public, private, immutable.' },
+    'res-blank': { title: 'Blank Line (CRLF)', text: 'Same as in requests — the empty line separates response headers from the response body.\n\nEverything after this line is the actual payload.' },
+    'res-body': { title: 'Response Body', text: 'The actual data returned by the server.\n\nHere it\'s a JSON object with the created user:\n• id: 1337 — server-assigned ID\n• name: "Ada Lovelace" — from the request\n• created: timestamp — server-added metadata\n\nNot all responses have bodies (204, 304 have none).' }
+  }
+};
+
+function explainMsg(el, type) {
+  const container = type === 'req' ? 'reqMsg' : 'resMsg';
+  const box = type === 'req' ? 'reqExplainBox' : 'resExplainBox';
+  document.querySelectorAll('#' + container + ' .msg-part').forEach(p => p.classList.remove('selected'));
+  el.classList.add('selected');
+  const info = msgExplanations[type][el.dataset.explain];
+  if (!info) return;
+  document.getElementById(box).innerHTML = '<h4 style="color:var(--accent); margin:0 0 6px;">' + info.title + '</h4><pre style="white-space:pre-wrap; font-family:var(--sans); font-size:0.9em; color:var(--text); background:none; border:none; padding:0; margin:0; line-height:1.55;">' + info.text + '</pre>';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DNS INTERACTIVE
+   ═══════════════════════════════════════════════════════════════════════ */
+const dnsDetails = [
+  'The browser first checks its own DNS cache, then the OS-level cache (hosts file). If found, skip directly to connecting — no network needed!',
+  'If not cached, the browser asks a recursive DNS resolver (your ISP\'s DNS or a public one like 8.8.8.8 or 1.1.1.1). This resolver does the heavy lifting.',
+  'The resolver asks a root nameserver: "Where can I find .com domains?" The root server responds with the address of the .com TLD nameserver.',
+  'The resolver asks the .com TLD nameserver: "Where is example.com?" It responds with the address of example.com\'s authoritative nameserver.',
+  'The authoritative nameserver has the actual DNS records. It responds with the A record (IPv4) or AAAA record (IPv6): "example.com → 93.184.216.34"',
+  'The IP address is cached at every level (browser, OS, resolver) according to the TTL (Time To Live) value. Now the browser can open a TCP connection to that IP!'
+];
+
+let dnsIdx = -1;
+const dnsTimeline = Array.from(document.querySelectorAll('#dnsTimeline li'));
+const dnsExplain = document.getElementById('dnsExplain');
+
+function renderDNS() {
+  dnsTimeline.forEach(function(li, i) { li.classList.toggle('active', dnsIdx >= 0 && i <= dnsIdx); });
+  dnsExplain.innerHTML = dnsIdx < 0
+    ? '<span class="dim">Press <strong>Next</strong> to walk through DNS resolution.</span>'
+    : '<h4 style="color:var(--accent);margin:0 0 4px;">Step ' + (dnsIdx + 1) + '</h4><span style="font-size:0.9em;line-height:1.6;">' + dnsDetails[dnsIdx] + '</span>';
+}
+
+document.getElementById('dnsNext').onclick = function() { dnsIdx = Math.min(dnsIdx + 1, dnsDetails.length - 1); renderDNS(); };
+document.getElementById('dnsPrev').onclick = function() { dnsIdx = Math.max(dnsIdx - 1, -1); renderDNS(); };
+document.getElementById('dnsReset').onclick = function() { dnsIdx = -1; renderDNS(); };
+
+/* ═══════════════════════════════════════════════════════════════════════
+   JWT INTERACTIVE
+   ═══════════════════════════════════════════════════════════════════════ */
+function showJwtPart(part) {
+  var box = document.getElementById('jwtExplain');
+  var content = {
+    header: '<h4 style="color:#f472b6;margin:0 0 6px;">Header (Algorithm & Type)</h4><pre style="white-space:pre-wrap;font-family:var(--mono);font-size:0.9em;color:var(--text);background:rgba(244,114,182,0.08);border:1px solid rgba(244,114,182,0.2);border-radius:8px;padding:10px;margin:0;line-height:1.5;">{\n  "alg": "HS256",\n  "typ": "JWT"\n}</pre><p style="font-size:0.8em;color:var(--text-dim);margin-top:8px;">Base64Url-encoded. Specifies the signing algorithm (HMAC SHA-256) and token type.</p>',
+    payload: '<h4 style="color:#a78bfa;margin:0 0 6px;">Payload (Claims)</h4><pre style="white-space:pre-wrap;font-family:var(--mono);font-size:0.9em;color:var(--text);background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.2);border-radius:8px;padding:10px;margin:0;line-height:1.5;">{\n  "sub": "1234567890",\n  "name": "John Doe",\n  "iat": 1516239022\n}</pre><p style="font-size:0.8em;color:var(--text-dim);margin-top:8px;">Base64Url-encoded. Contains the claims (user data). ⚠️ NOT encrypted — anyone can decode this!</p>',
+    signature: '<h4 style="color:#34d399;margin:0 0 6px;">Signature (Verification)</h4><pre style="white-space:pre-wrap;font-family:var(--mono);font-size:0.85em;color:var(--text);background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.2);border-radius:8px;padding:10px;margin:0;line-height:1.5;">HMACSHA256(\n  base64UrlEncode(header) + "." +\n  base64UrlEncode(payload),\n  secret\n)</pre><p style="font-size:0.8em;color:var(--text-dim);margin-top:8px;">Created by signing header + payload with a secret key. The server verifies this to ensure the token hasn\'t been tampered with.</p>'
+  };
+  box.innerHTML = content[part] || '';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TLS HANDSHAKE INTERACTIVE
+   ═══════════════════════════════════════════════════════════════════════ */
+var tlsSteps = [
+  '<h4 style="color:var(--teal);margin:0 0 6px;">1. ClientHello</h4><p style="font-size:0.85em;line-height:1.6;">The client initiates the handshake by sending:</p><ul style="font-size:0.8em;line-height:1.6;margin:6px 0;"><li>Supported TLS versions (e.g., TLS 1.3, TLS 1.2)</li><li>Supported cipher suites (AES-GCM, ChaCha20)</li><li>A random number (Client Random)</li><li>ALPN extension: h2, http/1.1 (protocol preference)</li><li>SNI: server hostname (for virtual hosting)</li></ul>',
+  '<h4 style="color:var(--accent);margin:0 0 6px;">2. ServerHello</h4><p style="font-size:0.85em;line-height:1.6;">The server responds with its choices:</p><ul style="font-size:0.8em;line-height:1.6;margin:6px 0;"><li>Selected TLS version</li><li>Selected cipher suite</li><li>Server Random number</li><li>Selected ALPN protocol (h2)</li></ul><p style="font-size:0.8em;color:var(--text-dim);">In TLS 1.3, the server also sends its key share here — reducing round-trips!</p>',
+  '<h4 style="color:var(--accent);margin:0 0 6px;">3. Certificate</h4><p style="font-size:0.85em;line-height:1.6;">The server sends its X.509 certificate chain:</p><ul style="font-size:0.8em;line-height:1.6;margin:6px 0;"><li>Server\'s public key</li><li>Domain name it\'s valid for</li><li>Certificate Authority (CA) signature</li><li>Validity period</li></ul><p style="font-size:0.8em;color:var(--text-dim);">The client verifies the certificate against its trusted CA store.</p>',
+  '<h4 style="color:var(--accent);margin:0 0 6px;">4. Key Exchange</h4><p style="font-size:0.85em;line-height:1.6;">Both sides agree on a shared secret using Diffie-Hellman or ECDHE:</p><ul style="font-size:0.8em;line-height:1.6;margin:6px 0;"><li>Each side generates a key pair</li><li>They exchange public keys</li><li>Both derive the same shared secret</li><li>This enables <span style="color:var(--green);font-weight:700;">Forward Secrecy</span> — past sessions stay secure even if server key leaks</li></ul>',
+  '<h4 style="color:var(--teal);margin:0 0 6px;">5. Finished</h4><p style="font-size:0.85em;line-height:1.6;">Both sides send a Finished message encrypted with the new session keys:</p><ul style="font-size:0.8em;line-height:1.6;margin:6px 0;"><li>Contains a hash of all handshake messages</li><li>Proves both sides computed the same keys</li><li>Proves no one tampered with the handshake</li></ul><p style="font-size:0.8em;color:var(--text-dim);">After this, the TLS session is fully established.</p>',
+  '<h4 style="color:var(--green);margin:0 0 6px;">6. Application Data 🔒</h4><p style="font-size:0.85em;line-height:1.6;">The encrypted tunnel is ready! Now HTTP data flows encrypted:</p><ul style="font-size:0.8em;line-height:1.6;margin:6px 0;"><li>All HTTP requests and responses are encrypted</li><li>Data integrity is verified with HMAC/AEAD</li><li>No one in between can read or modify the data</li><li>This is HTTPS — HTTP over TLS!</li></ul>'
+];
+
+function showTlsStep(idx) {
+  document.getElementById('tlsExplain').innerHTML = tlsSteps[idx] || '';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ETAG INTERACTIVE
+   ═══════════════════════════════════════════════════════════════════════ */
+var currentEtag = null;
+var resourceVersion = 1;
+
+document.getElementById('etagFirst').onclick = function() {
+  currentEtag = '"v' + resourceVersion + '"';
+  document.getElementById('etagResult').innerHTML =
+    '<h4 style="color:var(--green);margin:0 0 6px;">200 OK — First Request</h4>' +
+    '<pre style="white-space:pre-wrap;font-family:var(--mono);font-size:0.85em;background:none;border:none;padding:0;margin:0;color:var(--text);line-height:1.5;">GET /resource HTTP/1.1\n\nHTTP/1.1 200 OK\nETag: ' + currentEtag + '\nCache-Control: max-age=60\nContent-Type: application/json\n\n{"data":"version ' + resourceVersion + '","cached":true}</pre>' +
+    '<p style="font-size:0.78em;color:var(--text-dim);margin-top:8px;">✅ Resource received and cached with ETag: ' + currentEtag + '</p>';
+};
+
+document.getElementById('etagSecond').onclick = function() {
+  if (!currentEtag) {
+    document.getElementById('etagResult').innerHTML = '<span class="dim">⚠️ Do the first request first to get an ETag!</span>';
+    return;
+  }
+  var serverEtag = '"v' + resourceVersion + '"';
+  if (currentEtag === serverEtag) {
+    document.getElementById('etagResult').innerHTML =
+      '<h4 style="color:var(--teal);margin:0 0 6px;">304 Not Modified — Cache Hit!</h4>' +
+      '<pre style="white-space:pre-wrap;font-family:var(--mono);font-size:0.85em;background:none;border:none;padding:0;margin:0;color:var(--text);line-height:1.5;">GET /resource HTTP/1.1\nIf-None-Match: ' + currentEtag + '\n\nHTTP/1.1 304 Not Modified\nETag: ' + serverEtag + '\n\n(no body transferred!)</pre>' +
+      '<p style="font-size:0.78em;color:var(--text-dim);margin-top:8px;">🎯 Server confirmed: use your cached copy. Saved bandwidth!</p>';
+  } else {
+    currentEtag = serverEtag;
+    document.getElementById('etagResult').innerHTML =
+      '<h4 style="color:var(--accent);margin:0 0 6px;">200 OK — Resource Changed!</h4>' +
+      '<pre style="white-space:pre-wrap;font-family:var(--mono);font-size:0.85em;background:none;border:none;padding:0;margin:0;color:var(--text);line-height:1.5;">GET /resource HTTP/1.1\nIf-None-Match: ' + currentEtag + '\n\nHTTP/1.1 200 OK\nETag: ' + serverEtag + '\n\n{"data":"version ' + resourceVersion + '","cached":true}</pre>' +
+      '<p style="font-size:0.78em;color:var(--text-dim);margin-top:8px;">📦 Resource was updated — new version downloaded and cached.</p>';
+  }
+};
+
+document.getElementById('etagChanged').onclick = function() {
+  resourceVersion++;
+  document.getElementById('etagResult').innerHTML =
+    '<h4 style="color:var(--rose);margin:0 0 6px;">⚡ Resource Updated on Server</h4>' +
+    '<p style="font-size:0.85em;line-height:1.5;">The server resource changed to version ' + resourceVersion + '.<br>Your cached ETag ' + (currentEtag || '(none)') + ' is now stale.</p>' +
+    '<p style="font-size:0.78em;color:var(--text-dim);margin-top:8px;">Now try step 2️⃣ to see what happens with the conditional request!</p>';
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   COMPRESSION ESTIMATOR
+   ═══════════════════════════════════════════════════════════════════════ */
+document.getElementById('cmpRun').onclick = function() {
+  var size = Math.max(1, Number(document.getElementById('cmpSize').value || 1));
+  var algo = document.getElementById('cmpAlgo').value;
+  var ratios = { gzip: 0.32, deflate: 0.37, brotli: 0.24, zstd: 0.28 };
+  var ratio = ratios[algo] || 0.32;
+  var compressed = Math.round(size * ratio);
+  var saved = size - compressed;
+  var pct = Math.round((saved / size) * 100);
+  document.getElementById('cmpResult').innerHTML =
+    '<span class="accent bold">' + algo + '</span>: ' + size + ' B → <span class="green bold">' + compressed + ' B</span> (saved ' + saved + ' B / ' + pct + '%)' +
+    '<br><span class="dim" style="font-size:0.85em;">Actual ratios depend on data structure and content type.</span>';
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RANGE REQUEST SIMULATOR
+   ═══════════════════════════════════════════════════════════════════════ */
+document.getElementById('rangeRun').onclick = function() {
+  var total = Number(document.getElementById('rangeTotal').value || 0);
+  var range = document.getElementById('rangeHeader').value.trim();
+  var m = /^bytes=(\d+)-(\d*)$/.exec(range);
+  if (!m || total <= 0) {
+    document.getElementById('rangeResult').innerHTML = '<span class="rose">Invalid range format. Example: bytes=0-1023</span>';
+    return;
+  }
+  var s = Number(m[1]);
+  var e = m[2] !== '' ? Number(m[2]) : total - 1;
+  if (s > e || e >= total) {
+    document.getElementById('rangeResult').innerHTML = '<span class="rose bold">416 Range Not Satisfiable</span><br><span class="dim">Requested range exceeds resource size.</span>';
+    return;
+  }
+  document.getElementById('rangeResult').innerHTML =
+    '<span class="green bold">206 Partial Content</span><br>' +
+    '<span class="mono" style="font-size:0.9em;">Content-Range: bytes ' + s + '-' + e + '/' + total + '</span><br>' +
+    '<span class="mono" style="font-size:0.9em;">Content-Length: ' + (e - s + 1) + '</span><br>' +
+    '<span class="dim" style="font-size:0.85em;">Returning ' + (e - s + 1) + ' of ' + total + ' bytes (' + Math.round((e - s + 1) / total * 100) + '%)</span>';
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CHUNKED TRANSFER SIMULATOR
+   ═══════════════════════════════════════════════════════════════════════ */
+document.getElementById('chunkRun').onclick = function() {
+  var text = document.getElementById('chunkText').value || '';
+  var size = Math.max(1, Number(document.getElementById('chunkSize').value || 16));
+  var out = 'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n';
+  for (var i = 0; i < text.length; i += size) {
+    var chunk = text.slice(i, i + size);
+    out += chunk.length.toString(16) + '\r\n' + chunk + '\r\n';
+  }
+  out += '0\r\n\r\n';
+  document.getElementById('chunkResult').textContent = out;
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   QUIZ SYSTEM
+   ═══════════════════════════════════════════════════════════════════════ */
+var quizAnswered = {};
+function checkQuiz(quizId, btn, isCorrect) {
+  if (quizAnswered[quizId]) return;
+  quizAnswered[quizId] = true;
+  var btns = document.querySelectorAll('#' + quizId + ' .quiz-btn');
+  btns.forEach(function(b) {
+    b.style.pointerEvents = 'none';
+    b.style.opacity = '0.6';
+  });
+  btn.style.opacity = '1';
+  btn.classList.add(isCorrect ? 'correct' : 'wrong');
+  if (!isCorrect) {
+    btns.forEach(function(b) {
+      if (b.onclick && b.getAttribute('onclick') && b.getAttribute('onclick').indexOf('true') > -1) {
+        b.classList.add('correct');
+        b.style.opacity = '1';
+      }
+    });
+  }
+  var explanations = {
+    quiz1: isCorrect
+      ? '✅ Correct! 304 Not Modified tells the client its cached version is still valid.'
+      : '❌ Not quite. 304 Not Modified is the cache validation response — sent when If-None-Match or If-Modified-Since matches.',
+    quiz2: isCorrect
+      ? '✅ Correct! POST is not idempotent — each call may create a new resource.'
+      : '❌ POST is the answer. POST is not idempotent because calling it multiple times may create multiple resources.',
+    quiz3: isCorrect
+      ? '✅ Correct! X-Frame-Options: DENY prevents the page from being loaded in any iframe.'
+      : '❌ X-Frame-Options specifically controls iframe embedding. CSP can do this too, but X-Frame-Options is the dedicated header.',
+    quiz4: isCorrect
+      ? '✅ Correct! HPACK uses a static table (61 entries), a dynamic table (connection-specific), and Huffman coding.'
+      : '❌ HPACK uses static/dynamic tables for index-based compression and Huffman coding for string values — not gzip or Base64.',
+    quiz5: isCorrect
+      ? '✅ Correct! HTTP/3 runs on QUIC, which is built on UDP for independent stream handling.'
+      : '❌ HTTP/3 uses QUIC over UDP. This eliminates TCP head-of-line blocking.',
+    quiz6: isCorrect
+      ? '✅ Correct! HttpOnly means JavaScript cannot read the cookie via document.cookie — protecting against XSS.'
+      : '❌ HttpOnly prevents JavaScript from accessing the cookie. The Secure flag is for HTTPS-only, and SameSite controls cross-site sending.'
+  };
+  document.getElementById(quizId + 'Result').innerHTML = '<span style="font-size:0.85em;line-height:1.5;">' + (explanations[quizId] || '') + '</span>';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INIT — trigger initial states
+   ═══════════════════════════════════════════════════════════════════════ */
+document.getElementById('cmpRun').click();
+document.getElementById('chunkRun').click();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   HTTP REQUEST ANIMATION (Opener)
+   ═══════════════════════════════════════════════════════════════════════ */
+(function() {
+  var animLog = document.getElementById('animLog');
+  var animPacket = document.getElementById('animPacket');
+  var animRunning = false;
+
+  var steps = [
+    { delay: 0,    pos: '0%',   color: 'var(--teal)',   label: '<span class="teal">Browser</span>  User types <span class="accent">https://api.example.com/users/42</span>' },
+    { delay: 800,  pos: '42%',  color: 'var(--purple)', label: '<span class="teal">Browser → DNS</span>  Resolving api.example.com…' },
+    { delay: 1400, pos: '42%',  color: 'var(--purple)', label: '<span class="purple">DNS → Browser</span>  Resolved: <span class="green">93.184.216.34</span>' },
+    { delay: 2000, pos: '92%',  color: 'var(--teal)',   label: '<span class="teal">Browser → Server</span>  TCP SYN → SYN-ACK → ACK  <span class="dim">(3-way handshake)</span>' },
+    { delay: 2800, pos: '92%',  color: 'var(--accent)',  label: '<span class="teal">Browser ↔ Server</span>  TLS 1.3 handshake — <span class="green">🔒 encrypted tunnel ready</span>' },
+    { delay: 3800, pos: '92%',  color: 'var(--accent)',  label: '<span class="accent">→ Request</span>  <span class="mono" style="font-size:0.95em;">GET /users/42 HTTP/2</span>' },
+    { delay: 4400, pos: '92%',  color: 'var(--accent)',  label: '<span class="accent">→ Headers</span>  <span class="mono dim" style="font-size:0.9em;">Host: api.example.com | Accept: application/json</span>' },
+    { delay: 5200, pos: '4%',   color: 'var(--green)',  label: '<span class="green">← Response</span>  <span class="mono" style="font-size:0.95em;">HTTP/2 200 OK</span>' },
+    { delay: 5900, pos: '4%',   color: 'var(--green)',  label: '<span class="green">← Headers</span>  <span class="mono dim" style="font-size:0.9em;">Content-Type: application/json | ETag: "d4e5f6"</span>' },
+    { delay: 6600, pos: '0%',   color: 'var(--green)',  label: '<span class="green">← Body</span>  <span class="mono" style="font-size:0.9em;">{"id":42,"name":"Ada Lovelace"}</span>' },
+    { delay: 7400, pos: '0%',   color: 'var(--teal)',   label: '<span class="teal bold">✅ Done!</span>  Browser renders the data — total: ~120 ms' }
+  ];
+
+  function movePacket(pos, color) {
+    animPacket.style.transition = 'left 0.5s cubic-bezier(.4,0,.2,1), background 0.15s ease, color 0.15s ease';
+    animPacket.style.left = pos;
+    animPacket.style.background = color;
+    animPacket.style.color = color;
+    animPacket.style.opacity = '1';
+    animPacket.style.animation = 'animPulse 1s ease infinite';
+  }
+
+  function addLine(html) {
+    var d = document.createElement('div');
+    d.className = 'anim-line';
+    d.innerHTML = html;
+    animLog.appendChild(d);
+    animLog.scrollTop = animLog.scrollHeight;
+  }
+
+  function runAnimation() {
+    if (animRunning) return;
+    animRunning = true;
+    animLog.innerHTML = '';
+    animPacket.style.opacity = '0';
+    animPacket.style.transition = 'none';
+    animPacket.style.left = '0%';
+
+    steps.forEach(function(step) {
+      setTimeout(function() {
+        movePacket(step.pos, step.color);
+        addLine(step.label);
+        if (step === steps[steps.length - 1]) {
+          animRunning = false;
+        }
+      }, step.delay);
+    });
+  }
+
+  function resetAnimation() {
+    animRunning = false;
+    animLog.innerHTML = '<span class="dim">Press <strong>▶ Start Animation</strong> to see what happens behind a single HTTP request.</span>';
+    animPacket.style.transition = 'none';
+    animPacket.style.opacity = '0';
+    animPacket.style.left = '0%';
+    animPacket.style.animation = 'none';
+  }
+
+  document.getElementById('animStart').onclick = runAnimation;
+  document.getElementById('animReset').onclick = resetAnimation;
+  resetAnimation();
+})();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   NETWORK LAYERS ANIMATION — step-based engine
+   ═══════════════════════════════════════════════════════════════════════ */
+(function() {
+  var layerRows = document.querySelectorAll('.layer-row');
+  var layerExplain = document.getElementById('layerExplain');
+  var layerPacket = document.getElementById('layerPacket');
+  var layerAck = document.getElementById('layerAck');
+  var layerLog = document.getElementById('layerLog');
+  var layerCounter = document.getElementById('layerCounter');
+  var encapIds = ['encap-http', 'encap-tls', 'encap-tcp', 'encap-ip', 'encap-eth', 'encap-pad'];
+  var layerColors = ['var(--accent)', 'var(--green)', 'var(--teal)', 'var(--purple)', 'var(--rose)', 'rgba(140,180,220,0.6)'];
+
+  var autoRunning = false;
+  var autoTimeouts = [];
+  var currentStep = -1;
+
+  /* ── helper functions ── */
+  function moveData(pos, color) {
+    layerPacket.style.transition = 'left 0.6s cubic-bezier(.4,0,.2,1), background 0.2s ease';
+    layerPacket.style.left = pos;
+    layerPacket.style.background = color;
+    layerPacket.style.opacity = '1';
+    layerPacket.style.animation = 'animPulse 1s ease infinite';
+  }
+  function showData(pos, color) {
+    layerPacket.style.transition = 'none';
+    layerPacket.style.left = pos;
+    layerPacket.style.background = color;
+    layerPacket.style.opacity = '1';
+    layerPacket.style.animation = 'animPulse 1s ease infinite';
+  }
+  function hideData() { layerPacket.style.transition='none'; layerPacket.style.opacity='0'; layerPacket.style.animation='none'; }
+  function moveAck(pos, color) {
+    layerAck.style.transition = 'left 0.6s cubic-bezier(.4,0,.2,1), border-color 0.2s ease, background 0.2s ease';
+    layerAck.style.left = pos; layerAck.style.right = 'auto';
+    layerAck.style.borderColor = color; layerAck.style.background = color;
+    layerAck.style.opacity = '1'; layerAck.style.animation = 'animPulse 1s ease infinite';
+  }
+  function showAck(pos, color) {
+    layerAck.style.transition = 'none';
+    layerAck.style.left = pos; layerAck.style.right = 'auto';
+    layerAck.style.borderColor = color; layerAck.style.background = color;
+    layerAck.style.opacity = '1'; layerAck.style.animation = 'animPulse 1s ease infinite';
+  }
+  function hideAck() { layerAck.style.transition='none'; layerAck.style.opacity='0'; layerAck.style.animation='none'; }
+
+  function highlightLayer(idx) {
+    layerRows.forEach(function(r, i) {
+      r.classList.remove('highlight', 'done');
+      r.classList.toggle('active', i <= idx);
+      if (i === idx) r.classList.add('highlight');
+    });
+    encapIds.forEach(function(id, i) { document.getElementById(id).classList.toggle('active', i <= idx); });
+  }
+  function allLayersActive() {
+    layerRows.forEach(function(r) { r.classList.add('active'); r.classList.remove('highlight', 'done'); });
+    encapIds.forEach(function(id) { document.getElementById(id).classList.add('active'); });
+  }
+  function dimLayerDown(idx) {
+    var ri = 5 - idx;
+    layerRows.forEach(function(r, i) { r.classList.remove('highlight'); if (i >= ri) { r.classList.add('done'); r.classList.remove('active'); } });
+    encapIds.forEach(function(id, i) { if (i >= ri) document.getElementById(id).classList.remove('active'); });
+  }
+  function clearHighlights() { layerRows.forEach(function(r) { r.classList.remove('highlight'); }); }
+  function explain(html) { layerExplain.innerHTML = '<div style="font-size:0.82em;line-height:1.45;">' + html + '</div>'; }
+
+  /* ── step definitions ── */
+  var steps = [
+    /* 0-5: encapsulation */
+    { label: '📦 Wrap HTTP',      tag: 'accent',  fn: function() { highlightLayer(0); moveData('2%', layerColors[0]); explain('<span class="accent bold">Application — HTTP/2</span><br>Browser builds: <span class="mono">GET /users/42</span><br>Headers: Host, Accept, Authorization…'); }},
+    { label: '🔒 Wrap TLS',       tag: 'green',   fn: function() { highlightLayer(1); moveData('2%', layerColors[1]); explain('<span class="green bold">Security — TLS 1.3</span><br>HTTP data encrypted into TLS record.<br>AES-256-GCM. Nobody in between can read it.'); }},
+    { label: '📡 Wrap TCP',       tag: 'teal',    fn: function() { highlightLayer(2); moveData('2%', layerColors[2]); explain('<span class="teal bold">Transport — TCP</span><br>TLS record → segment. <span class="mono">:54321→:443 Seq:1 [PSH,ACK]</span><br>Ordered, reliable delivery guaranteed.'); }},
+    { label: '🌐 Wrap IPv4',      tag: 'purple',  fn: function() { highlightLayer(3); moveData('2%', layerColors[3]); explain('<span class="purple bold">Network — IPv4</span><br>TCP segment → packet. <span class="mono">192.168.1.42→93.184.216.34 TTL:64</span><br>Routers use this to forward across networks.'); }},
+    { label: '🔗 Wrap Ethernet',  tag: 'rose',    fn: function() { highlightLayer(4); moveData('2%', layerColors[4]); explain('<span class="rose bold">Data Link — Ethernet</span><br>IP packet → frame. <span class="mono">MAC aa:bb→11:22</span><br>MAC addresses are local-only, change at every hop.'); }},
+    { label: '⚡ Physical layer',  tag: 'dim',     fn: function() { highlightLayer(5); moveData('2%', layerColors[5]); explain('<span class="bold" style="color:rgba(140,180,220,0.9);">Physical — Wire / WiFi</span><br>Frame → electrical signals or radio waves.<br>Bits travel at ~⅔ speed of light on copper.'); }},
+
+    /* 6-7: travel */
+    { label: '🚀 → Router',       tag: 'dim',     fn: function() { clearHighlights(); moveData('46%', 'rgba(140,180,220,0.8)'); explain('<span class="bold" style="color:rgba(140,180,220,0.9);">🚀 On the wire!</span> Frame travels through routers…<br><span class="dim">Routers strip & re-add Ethernet headers (new MACs), IP stays the same.</span>'); }},
+    { label: '📥 → Server',       tag: 'dim',     fn: function() { moveData('92%', 'rgba(140,180,220,0.8)'); explain('<span class="bold" style="color:rgba(140,180,220,0.9);">📥 Arrived at server!</span> Decapsulating layers in reverse…'); }},
+
+    /* 8-13: decapsulation */
+    { label: '↩ Physical',        tag: 'dim',     fn: function() { dimLayerDown(0); moveData('92%', layerColors[5]); explain('<span class="bold" style="color:rgba(140,180,220,0.9);">↩ Physical</span> — Server NIC receives signals, reconstructs bits.'); }},
+    { label: '↩ Ethernet',        tag: 'rose',    fn: function() { dimLayerDown(1); moveData('92%', layerColors[4]); explain('<span class="rose bold">↩ Ethernet</span> — Frame validated (FCS), MAC matched → pass to IP.'); }},
+    { label: '↩ IPv4',            tag: 'purple',  fn: function() { dimLayerDown(2); moveData('92%', layerColors[3]); explain('<span class="purple bold">↩ IPv4</span> — Destination IP confirmed, TTL decremented → pass to TCP.'); }},
+    { label: '↩ TCP',             tag: 'teal',    fn: function() { dimLayerDown(3); moveData('92%', layerColors[2]); explain('<span class="teal bold">↩ TCP</span> — Port matched, sequence checked → pass to TLS.'); }},
+    { label: '↩ TLS',             tag: 'green',   fn: function() { dimLayerDown(4); moveData('92%', layerColors[1]); explain('<span class="green bold">↩ TLS 1.3</span> — Decrypted with session key → plaintext HTTP.'); }},
+    { label: '↩ HTTP delivered',   tag: 'accent',  fn: function() { dimLayerDown(5); moveData('92%', layerColors[0]); explain('<span class="accent bold">↩ HTTP</span> — Server reads <span class="mono">GET /users/42</span>. Request delivered!'); }},
+
+    /* 14-16: TCP ACK back */
+    { label: '← TCP ACK sent',    tag: 'teal',    fn: function() { hideData(); allLayersActive(); showAck('92%', 'var(--teal)'); explain('<span class="teal bold">← TCP ACK</span> — Server acknowledges.<br><span class="mono">Seq:1 Ack:342 [ACK] Win:65535</span><br><span class="dim">"I received your 342 bytes!"</span>'); }},
+    { label: '← ACK → Router',    tag: 'teal',    fn: function() { moveAck('46%', 'var(--teal)'); }},
+    { label: '← ACK → Client',    tag: 'teal',    fn: function() { moveAck('2%', 'var(--teal)'); explain('<span class="teal bold">← TCP ACK received</span><br>Client knows delivery succeeded. Sliding window advances.<br><span class="dim">No ACK within RTO → retransmit.</span>'); }},
+
+    /* 17-19: HTTP response back */
+    { label: '← HTTP 200 sent',   tag: 'green',   fn: function() { hideAck(); showData('92%', 'var(--green)'); explain('<span class="green bold">← HTTP 200 OK</span><br><span class="mono">Content-Type: application/json</span><br><span class="mono dim">{"id":42,"name":"Ada Lovelace"}</span><br><span class="dim">Same encapsulation in reverse direction.</span>'); }},
+    { label: '← Resp → Router',   tag: 'green',   fn: function() { moveData('46%', 'var(--green)'); }},
+    { label: '← Resp → Client',   tag: 'green',   fn: function() { moveData('2%', 'var(--green)'); explain('<span class="green bold">← Response received!</span><br>Browser decapsulates, decrypts, renders the JSON.'); }},
+
+    /* 20-22: final ACK */
+    { label: '→ ACK sent',        tag: 'teal',    fn: function() { hideData(); showAck('2%', 'var(--teal)'); explain('<span class="teal bold">→ TCP ACK</span> — Client acknowledges the response.<br><span class="mono">Ack:1024 [ACK]</span><br><span class="dim">Every segment gets acknowledged — TCP reliability.</span>'); }},
+    { label: '→ ACK → Router',    tag: 'teal',    fn: function() { moveAck('46%', 'var(--teal)'); }},
+    { label: '→ ACK → Server',    tag: 'teal',    fn: function() { moveAck('92%', 'var(--teal)'); explain('<span class="teal bold">→ ACK received by server</span> — Full round trip complete!'); }},
+
+    /* 23: done */
+    { label: '✅ Complete!',       tag: 'accent',  fn: function() { hideAck(); allLayersActive(); explain('<span class="accent bold">✅ Complete!</span> Request → ACK → Response → ACK<br><br>Every HTTP exchange relies on TCP\'s reliable ACK mechanism.<br><span class="dim">Layers wrap on send, unwrap on receive. ACKs flow in both directions.</span>'); }}
+  ];
+
+  /* ── step log ── */
+  function logStep(idx) {
+    if (idx === 0) layerLog.innerHTML = '';
+    var s = steps[idx];
+    var tagColor = { accent: 'var(--accent)', green: 'var(--green)', teal: 'var(--teal)', purple: 'var(--purple)', rose: 'var(--rose)', dim: 'var(--text-dim)' };
+    var color = tagColor[s.tag] || 'var(--text-dim)';
+    var d = document.createElement('div');
+    d.style.cssText = 'padding:1px 0; border-left:3px solid ' + color + '; padding-left:6px; margin:1px 0; opacity:0; transform:translateY(4px); transition:opacity 0.3s, transform 0.3s;';
+    d.innerHTML = '<span style="color:var(--text-dim); min-width:20px; display:inline-block;">' + (idx + 1) + '.</span> ' + s.label;
+    layerLog.appendChild(d);
+    requestAnimationFrame(function() { d.style.opacity = '1'; d.style.transform = 'translateY(0)'; });
+    layerLog.scrollTop = layerLog.scrollHeight;
+    layerCounter.textContent = (idx + 1) + ' / ' + steps.length;
+  }
+
+  /* ── execute a single step ── */
+  function executeStep(idx) {
+    if (idx < 0 || idx >= steps.length) return;
+    steps[idx].fn();
+    logStep(idx);
+  }
+
+  /* ── step-by-step mode ── */
+  function stepOnce() {
+    if (autoRunning) return;
+    currentStep++;
+    if (currentStep >= steps.length) return;
+    executeStep(currentStep);
+  }
+
+  /* ── autoplay mode ── */
+  function autoPlay() {
+    if (autoRunning) return;
+    autoRunning = true;
+    resetLayers(true);
+    currentStep = -1;
+
+    for (var i = 0; i < steps.length; i++) {
+      (function(idx) {
+        autoTimeouts.push(setTimeout(function() {
+          currentStep = idx;
+          executeStep(idx);
+          if (idx === steps.length - 1) autoRunning = false;
+        }, idx * 1000));
+      })(i);
+    }
+  }
+
+  /* ── reset ── */
+  function resetLayers(silent) {
+    autoTimeouts.forEach(clearTimeout);
+    autoTimeouts = [];
+    autoRunning = false;
+    currentStep = -1;
+    layerRows.forEach(function(r) { r.classList.remove('active', 'highlight', 'done'); });
+    encapIds.forEach(function(id) { document.getElementById(id).classList.remove('active'); });
+    hideData(); hideAck();
+    layerCounter.textContent = '';
+    if (!silent) {
+      layerExplain.innerHTML = '<span class="dim">Press <strong>▶ Auto</strong> or <strong>⏭ Step</strong> to walk through the animation.</span>';
+      layerLog.innerHTML = '<span class="dim">Step log appears here…</span>';
+    }
+  }
+
+  document.getElementById('layerStart').onclick = autoPlay;
+  document.getElementById('layerStep').onclick = stepOnce;
+  document.getElementById('layerReset').onclick = function() { resetLayers(false); };
+  resetLayers(false);
+})();
+</script>
+</body>
+</html>
